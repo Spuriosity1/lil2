@@ -83,7 +83,6 @@ int test_lookup_consistency(Supercell<Spin>& sc){
 
     for (const auto& [I, cell] : sc.enumerate_cells() ) {
         for (auto [spin_sl, spin] : cell.enumerate_objects<Spin>()){
-            std::cout << "Spin at "<<spin->ipos<<"\n";
 
             auto R_tmp = spin->ipos;
             auto R_tmp_2 = spin->ipos;

@@ -10,9 +10,12 @@
 
 template<typename T>
 concept UFElement = requires(T t) {
+    // Actual position
     { t.ipos } -> std::convertible_to<const ipos_t>;
+    // list of neighbours for UF purposes
     { t.neighbours } -> std::same_as<std::vector<T*>&>;
     { t.deleted } -> std::convertible_to<bool>;
+    // position of element relative to root, summed along path
     { t.dx } -> std::convertible_to<const ipos_t>;
     { t.parent } -> std::convertible_to<T*>;
 };
@@ -141,7 +144,8 @@ inline auto initialise_lattice(int L)
     }
     
     // The size of the supercell
-    imat33_t Z = imat33_t::from_cols({-L,L,L},{L,-L,L},{L,L,-L});
+//    imat33_t Z = imat33_t::from_cols({-L,L,L},{L,-L,L},{L,L,-L});
+    auto Z = imat33_t::from_cols({L,0,0}, {0, L, 0}, {0, 0, L});
 
     Supercell sc = build_supercell<Spin, Bond, Plaq>(cell, Z);
 
@@ -153,7 +157,6 @@ inline auto initialise_lattice(int L)
             for (const auto& dx : nn_vectors[spin_sl]){
                 auto r_nn = spin->ipos + dx;
                 auto nn = sc.get_object_at<Spin>(r_nn);
-                std::cout << "Spin at "<<spin->ipos<<"\t| dx="<<dx<<"\n";
                 assert_position(nn, r_nn);
                 spin->neighbours.push_back(nn);
             }
@@ -236,15 +239,38 @@ void spin_sweep(SuperLat& sc, double p, std::mt19937& rng){
 
 
 // finds the label for the cluster of element, 'elem'
+//template <UFElement T> 
+//T* find(T* elem, ipos_t& path_dx){
+//    path_dx={0,0,0};
+//    T* curr = elem;
+//    while (curr->parent != curr){
+//        path_dx += curr->dx;
+//        curr = curr->parent;
+//    }
+//    // curr is now the root node
+//    // compress the path
+//    elem->parent = curr;
+//    elem->dx = path_dx;
+//
+//    return curr;
+//}
+
 template <UFElement T> 
-T* find(T* elem){
-    if (elem->parent == elem) return elem;
+T* find(T* elem, ipos_t& path_dx){
+    if (elem->parent == elem) {
+        path_dx = {0,0,0};
+        return elem;
+    }
 
-    T* p = elem->parent;
-
-    auto root = find(p);
-    elem->dx += p->dx;
+  // Recursively find root and get displacement from parent to root
+    ipos_t parent_dx;
+    T* root = find(elem->parent, parent_dx);
+    
+    // Update displacement and compress path
+    path_dx = elem->dx + parent_dx;
+    elem->dx = path_dx;
     elem->parent = root;
+
     return root;
 }
 
@@ -252,8 +278,10 @@ T* find(T* elem){
 // returns true if the resulting join created a winding path
 template <UFElement T>
 bool join_nodes(T* e1, T* e2, const LatticeIndexing& lat){
-    T* root1 = find(e1);
-    T* root2 = find(e2);
+    ipos_t dx1{0,0,0};
+    ipos_t dx2{0,0,0};
+    T* root1 = find(e1, dx1);
+    T* root2 = find(e2, dx2);
 
     auto Delta_x =  e2->ipos - e1->ipos;
     lat.wrap_super_delta(Delta_x);
@@ -262,14 +290,15 @@ bool join_nodes(T* e1, T* e2, const LatticeIndexing& lat){
 
     if (root1 == root2){
         // check for winding!
-        auto loop_dx = Delta_x + (e1->dx - e2->dx);
+        auto loop_dx = Delta_x - (dx2 - dx1);
+//        std::cout<<"loop_dx = "<<loop_dx<<"\t Dx="<<Delta_x<<"\tdx1-dx2="<<dx1-dx2<<"\n";
         if (loop_dx != ipos_t{0,0,0}){
             percolates = true;
         }
     } else {
         // merge the two
-        root1->parent = root2;
-        root1->dx = root2->dx - root1->dx - Delta_x;
+        root2->parent = root1;
+        root2->dx = Delta_x - (dx2 - dx1);
     }
     
     return percolates;
@@ -283,7 +312,7 @@ bool initialise_tree(std::vector<T>& elements, const LatticeIndexing& lat
         ){
     // reset all spins
     for (auto& el : elements){
-        el.parent = &el;
+        el.parent = std::addressof(el);
         el.dx = {0,0,0};
     }
 
@@ -306,12 +335,13 @@ bool initialise_tree(std::vector<T>& elements, const LatticeIndexing& lat
 using namespace std;
 
 int main (int argc, char *argv[]) {
-    if (argc < 3){
-        cout << "Usage: "<<argv[0]<<"L P"<<std::endl;
+    if (argc < 4){
+        cout << "Usage: "<<argv[0]<<"L P seed"<<std::endl;
         return 1;
     }
     int L = atoi(argv[1]);
     double p = atof(argv[2]); // site deletion probability
+    size_t seed = atoi(argv[3]);
 
     SuperLat sc = initialise_lattice(L);
 
@@ -320,9 +350,10 @@ int main (int argc, char *argv[]) {
 
     // Delete about p*100% of the spins
     // (Bernoulli sample)
-    std::mt19937 rng;
+    std::mt19937 rng(seed);
     spin_sweep(sc, p, rng);
 
+    cerr<<"Latvecs: "<<sc.lattice.get_lattice_vectors()<<"\n";
 
     bool per = initialise_tree(sc.get_objects<Spin>(), sc.lattice);
 

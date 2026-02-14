@@ -120,6 +120,10 @@ public:
         return primitive_cell_vectors * I;
     }
 
+    inline imat33_t get_lattice_vectors(){
+        return wrap_to_index_cell.latvecs;
+    }
+
 };
 
 
@@ -263,6 +267,7 @@ struct Supercell {
     auto& get_objects() {
         return std::get<std::vector<T>>(objects);
     }
+
 
     // Lookup by position (integer coordinates)
     // note deliberate ipos copy
