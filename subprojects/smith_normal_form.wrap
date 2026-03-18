@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://github.com/Spuriosity1/smith_normal_form
+revision = HEAD
+depth = 1
