@@ -28,14 +28,18 @@ fftw_dep = dependency('fftw3', required: true)
 main_deps = [
   dependency('nlohmann_json', required: true),
   fftw_dep,
-  snf_dep
+  snf_dep,
+  dependency('argparse', required: true)
   ]
 
 project_lib=[]
 
 # collect the sources
-project_inc = include_directories('include')
+project_inc = include_directories(['include'])
 
+# install headers
+subdir('include')
+# build the library 
 subdir('src')
 
 # build tests
@@ -44,12 +48,18 @@ if get_option('enable-tests')
 endif
 
 # make project available
-#pkg_mod = import('pkgconfig')
-#pkg_mod.generate(libraries : lattice_indexing_lib,
-#                 version : '1.1',
-#                 name : 'liblatindex',
-#                 description : 'A library for indexing r-chains')
-#latlib_dep = declare_dependency(
-#  link_with : lattice_indexing_lib,
-#  include_directories : project_inc
-#)
+pkg_mod = import('pkgconfig')
+pkg_mod.generate(libraries : lil_lib,
+                 name : 'latlib',
+                 description : 'A library for building periodic arrays of objects cleanly',
+  version: meson.project_version(),
+  filebase: 'lattice_lib', 
+  subdirs: 'lattice_lib'
+  )
+
+
+latlib_dep = declare_dependency(
+  link_with : lil_lib,
+  dependencies: main_deps,
+  include_directories : project_inc
+)

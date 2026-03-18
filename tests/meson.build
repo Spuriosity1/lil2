@@ -17,11 +17,3 @@ cubic_construct = executable('cubic_construct', 'cubic_construct.cpp',
   link_with: project_lib,
   dependencies: main_deps
   )
-
-pyro_dilution = executable('pyro_dilution', 'pyro_dilution.cpp',
-  include_directories:project_inc,
-  link_with: project_lib,
-  dependencies: main_deps
-  )
-
-

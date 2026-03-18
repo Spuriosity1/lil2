@@ -411,3 +411,12 @@ build_supercell(const UnitCellSpecifier<Ts...>& cell, const imat33_t& Z)
     
     return result;
 }
+
+
+
+inline void assert_position(void *ptr, ipos_t R) {
+    if (ptr == nullptr) {
+        std::cerr << "Could not resolve object at position " << R << "\n";
+        throw std::runtime_error("Bad position");
+    }
+}

@@ -22,12 +22,6 @@ inline ipos_t floordiv(const ipos_t& x, int base){
     return ipos_t(x[0]/base, x[1]/base, x[2]/base);
 }
 
-void assert_position(void *ptr, ipos_t R) {
-    if (ptr == nullptr) {
-        std::cerr << "Could not resolve object at position " << R << "\n";
-        throw std::runtime_error("Bad position");
-    }
-}
 
 using MyCell = UnitCellSpecifier<Spin>;
 using SuperLat = Supercell<Spin>;

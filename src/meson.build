@@ -4,6 +4,7 @@ lil_lib = static_library('lil_lib',
   'unitcellspec.cpp'
   ]),
   include_directories: project_inc,
-  dependencies: main_deps)
+  dependencies: main_deps,
+  install: true)
 
 project_lib += [lil_lib]
