@@ -68,6 +68,7 @@ public:
 		return (I[0]*LDW.D[1] + I[1])*LDW.D[2] + I[2];
 	}
 
+    // Internal row major order for compatibility with fftw
     inline idx3_t idx3_from_flat(idx_t i) const {
         idx3_t I;
         I[2] = i % LDW.D[2];
@@ -77,7 +78,7 @@ public:
         return I;
     }
 
-    auto num_primitive_cells(){ return num_primitive; }
+    auto num_primitive_cells() const { return num_primitive; }
 
 /*
  * Wraps r to primitive cell, and returns the primitive-cell index
@@ -120,8 +121,13 @@ public:
         return primitive_cell_vectors * I;
     }
 
-    inline imat33_t get_lattice_vectors(){
+    inline imat33_t get_lattice_vectors() const {
         return wrap_to_index_cell.latvecs;
+    }
+
+    inline dmat33_t get_reciprocal_lattice_vectors() const {
+        return (M_2_PI / wrap_to_index_cell.abs_det_latvecs) *
+             dmat33_t::from_other(wrap_to_index_cell.inv_latvecs_times_det.tr());
     }
 
 };
@@ -366,6 +372,7 @@ build_supercell(const UnitCellSpecifier<Ts...>& cell, const imat33_t& Z)
          auto R = obj.ipos;
          lattice.wrap_primitive(R);
          sl.push_back(R);
+         // TODO: a check that the sl position is unique
      }
      }(), ...);
     

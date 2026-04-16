@@ -214,6 +214,17 @@ struct mat33 {
         return vec3<T>(m_x[3*i],m_x[3*i+1],m_x[3*i+2]);
     }
 
+    // transpose
+    constexpr mat33<T> tr() const {
+        mat33<T> retval;
+        for (int i=0; i<3; i++){
+            retval(0,i) = this->operator()(i,0);
+            retval(1,i) = this->operator()(i,1);
+            retval(2,i) = this->operator()(i,2);
+        }
+        return retval;
+    }
+
     static constexpr mat33 eye() {
         mat33 retval;
         retval(0,0) = 1;

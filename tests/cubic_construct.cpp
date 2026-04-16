@@ -18,10 +18,6 @@ struct Spin {
 };
 
 
-inline ipos_t floordiv(const ipos_t& x, int base){
-    return ipos_t(x[0]/base, x[1]/base, x[2]/base);
-}
-
 
 using MyCell = UnitCellSpecifier<Spin>;
 using SuperLat = Supercell<Spin>;

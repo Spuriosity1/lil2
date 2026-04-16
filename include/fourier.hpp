@@ -1,14 +1,12 @@
 #pragma once
 
 #include "supercell.hpp"
-#include "unitcellspec.hpp"
 #include <complex>
 #include <type_traits>
 #include <fftw3.h>
-#include <typeindex>
+
 
 // Accessor: extracts a double from an object at compile-time
-// No virtual functions, no std::function - pure template magic
 template<typename T, auto MemberPtr>
 struct FieldAccessor {
     static constexpr auto ptr = MemberPtr;
@@ -56,12 +54,36 @@ struct FourierBuffer {
 };
 
 // Inner product in k-space
-template<typename T>
-FourierBuffer<T> inner(const FourierBuffer<T>& a, const FourierBuffer<T>& b) {
+// Used for evaluating sums of the form
+// 1/N sum_{I, mu, J, nu} exp( -i (R_I + r_mu - R_J - r_nu).q  a(I, mu)b(J, nu))
+// Input: 
+// a, b FFT'd scalar fields
+template<typename T, typename coord_t>
+FourierBuffer<T> inner(const FourierBuffer<T>& a, const FourierBuffer<T>& b, 
+        const LatticeIndexing& lat, const std::vector<ipos_t>& sl_positions
+        ) {
+    assert(a.num_sublattices == b.num_sublattices);
+
     FourierBuffer<T> result(a.num_sublattices, a.k_dims);
-    for (int sl = 0; sl < a.num_sublattices; ++sl) {
-        for (size_t i = 0; i < a.data[sl].size(); ++i) {
-            result.data[sl][i] = std::conj(a.data[sl][i]) * b.data[sl][i];
+
+    const auto& B = lat.get_reciprocal_lattice_vectors();
+
+    for (int sl1 = 0; sl1 < a.num_sublattices; ++sl1) {
+        for (int sl2 = 0; sl2 < a.num_sublattices; ++sl2) {
+            idx3_t Q;
+
+            for (Q[0]=0; Q[0]<lat.size(0); Q[0]++)
+            for (Q[1]=0; Q[1]<lat.size(1); Q[1]++)
+            for (Q[2]=0; Q[2]<lat.size(2); Q[2]++)
+            {
+                int i_flat = lat.flat_from_idx3(Q);
+                auto q = B * Q; 
+
+                result.data[sl1][i_flat] = 
+                    std::conj(a.data[sl1][i_flat]) * b.data[sl1][i_flat] 
+                    * std::polar(1., -1.0* dot(q, vector3::vec3<double>(sl_positions[sl1] - sl_positions[sl2])) );
+                
+            }
         }
     }
     return result;
@@ -72,47 +94,74 @@ FourierBuffer<T> empty_FT_buffer_like(const FourierBuffer<T>& template_buf) {
     return FourierBuffer<T>(template_buf.num_sublattices, template_buf.k_dims);
 }
 
-// The transformer: sets up FFTW plans for a specific field
+
+/*
+ * This class is a general purpose way to compute Fourier transforms of 
+ * fields belonging to any GeometricObject.
+ *
+ * A general field may be expressed as 
+ * X(I0, I1, I2, mu), where
+ * 0 <= I0 < L0
+ * 0 <= I1 < L1
+ * 0 <= I2 < L2
+ * mu is an integer sublattice label.
+ *
+ * We wish to compute (with some normalisation)
+ *
+ * Y(K0, K1, K2, mu) =
+ *   \sum_{I0 in [0, L0)} 
+ *     \sum_{I1 in [0, L1)} 
+ *       \sum_{I2 in [0, L2)} 
+ *         X(I0, I1, I2, mu) * exp(- i 2 \pi \sum_s=0^2  I[s] K[s] / L[s] )
+ * 
+ * The actual positions: If primitive cell vectors are in matrix [a],
+ * R_i = [a]_ij I_j
+ * BZ positions:
+ * q_i = 2 pi * ([a]^-1 ^T)_ij  K_j / L_j
+ *
+ */
 template<typename T, typename Accessor, GeometricObject... Ts>
-class FourierTransform {
+class FourierTransformC2C {
     Supercell<Ts...>* sc;
     int num_sublattices;
     ivec3_t real_dims;  // real-space grid dimensions
     
     // FFTW data and plans per sublattice
-    std::vector<double*> real_data;
-    std::vector<fftw_complex*> k_data;
+    std::vector<fftw_complex*> rs_data;
+    std::vector<fftw_complex*> ks_data;
     std::vector<fftw_plan> plans;
     
     FourierBuffer<T> buffer;
     
 public:
-    FourierTransform(Supercell<Ts...>& supercell) 
+    FourierTransformC2C(Supercell<Ts...>& supercell)
         : sc(&supercell),
           real_dims(sc->lattice.size()),
-          buffer(sc->sl_positions[std::type_index(typeid(T))].size(), real_dims)
+          buffer(std::get<SlPos<T>>(sc->sl_positions).size(), real_dims)
     {
         num_sublattices = buffer.num_sublattices;
         int real_size = real_dims[0] * real_dims[1] * real_dims[2];
         
         // Allocate FFTW buffers and create plans for each sublattice
         for (int sl = 0; sl < num_sublattices; ++sl) {
-            real_data.push_back(fftw_alloc_real(real_size));
-            k_data.push_back(fftw_alloc_complex(real_size));
-            
-            plans.push_back(fftw_plan_dft_r2c_3d(
-                real_dims[0], real_dims[1], real_dims[2],
-                real_data[sl], k_data[sl],
-                FFTW_MEASURE
+            rs_data.push_back(fftw_alloc_complex(real_size));
+            ks_data.push_back(fftw_alloc_complex(real_size));
+
+            plans.push_back(fftw_plan_dft_3d(
+                static_cast<int>(real_dims[0]),
+                static_cast<int>(real_dims[1]),
+                static_cast<int>(real_dims[2]),
+                rs_data[sl], ks_data[sl],
+                FFTW_FORWARD, FFTW_MEASURE
             ));
         }
     }
     
-    ~FourierTransform() {
+    ~FourierTransformC2C() {
         for (int sl = 0; sl < num_sublattices; ++sl) {
             fftw_destroy_plan(plans[sl]);
-            fftw_free(real_data[sl]);
-            fftw_free(k_data[sl]);
+            fftw_free(rs_data[sl]);
+            fftw_free(ks_data[sl]);
         }
     }
     
@@ -126,7 +175,8 @@ public:
             // Copy data from objects to real_data buffer
             for (int i = 0; i < num_prim; ++i) {
                 idx_t obj_idx = sl * num_prim + i;
-                real_data[sl][i] = Accessor::get(objects[obj_idx]);
+                rs_data[sl][i][0] = Accessor::get(objects[obj_idx]);
+                rs_data[sl][i][1] = 0.0;
             }
             
             // Execute FFT
@@ -135,15 +185,14 @@ public:
             // Copy results to buffer
             for (int i = 0; i < num_prim; ++i) {
                 buffer[sl][i] = std::complex<double>(
-                    k_data[sl][i][0], 
-                    k_data[sl][i][1]
+                    ks_data[sl][i][0], 
+                    ks_data[sl][i][1]
                 );
             }
         }
     }
     
-    // Access the k-space buffer
-    FourierBuffer<T>& operator[](int sl) { return buffer; }
+    // Access the k-space buffer; index per sublattice with get_buffer()[sl]
     const FourierBuffer<T>& get_buffer() const { return buffer; }
     FourierBuffer<T>& get_buffer() { return buffer; }
 };
@@ -151,7 +200,7 @@ public:
 // Factory function with nice syntax
 template<typename T, auto MemberPtr, GeometricObject... Ts>
 auto make_fourier_transform(Supercell<Ts...>& sc) {
-    return FourierTransform<T, FieldAccessor<T, MemberPtr>, Ts...>(sc);
+    return FourierTransformC2C<T, FieldAccessor<T, MemberPtr>, Ts...>(sc);
 }
 
 // Usage example:

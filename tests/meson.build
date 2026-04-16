@@ -17,3 +17,15 @@ cubic_construct = executable('cubic_construct', 'cubic_construct.cpp',
   link_with: project_lib,
   dependencies: main_deps
   )
+
+cubic_fourier = executable('cubic_fourier', 'cubic_fourier.cpp',
+  include_directories:project_inc,
+  link_with: project_lib,
+  dependencies: main_deps
+  )
+
+snf_dims = executable('snf_dims', 'snf_dims.cpp',
+  include_directories:project_inc,
+  link_with: project_lib,
+  dependencies: main_deps
+  )
