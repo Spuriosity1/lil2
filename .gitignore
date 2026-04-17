@@ -1,0 +1,7 @@
+build
+build-debug
+.cache
+.DS_Store
+CLAUDE.md
+subprojects/.wraplock
+subprojects/smith_normal_form
