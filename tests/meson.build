@@ -18,6 +18,12 @@ cubic_construct = executable('cubic_construct', 'cubic_construct.cpp',
   dependencies: main_deps
   )
 
+pyro_fourier = executable('pyro_fourier', 'pyro_fourier.cpp',
+  include_directories:project_inc,
+  link_with: project_lib,
+  dependencies: main_deps
+  )
+
 cubic_fourier = executable('cubic_fourier', 'cubic_fourier.cpp',
   include_directories:project_inc,
   link_with: project_lib,
@@ -29,3 +35,10 @@ snf_dims = executable('snf_dims', 'snf_dims.cpp',
   link_with: project_lib,
   dependencies: main_deps
   )
+
+
+test('snf_dims', snf_dims)
+test('pyro_construct', pyro_construct, args: ['10', '0.5'])
+test('cubic_construct', cubic_construct, args: ['10', '0.5'])
+test('pyro_fourier', pyro_fourier)
+test('cubic_fourier', cubic_fourier)

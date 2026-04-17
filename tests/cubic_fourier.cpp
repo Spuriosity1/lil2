@@ -344,8 +344,8 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
         }
     }
 
-    check(ok_cross, "structure factor: S1(K) == S2(K) over entire 2-sl BZ");
-    check(ok_self,  "structure factor: 1-sl S(K) == |A(K)|²");
+    check(ok_cross, "structure factor: S1(K) == S2(K) over entire backfolded BZ");
+    check(ok_self,  "structure factor: ptimitive S(K) == |A(K)|²");
 }
 
 // ---------------------------------------------------------------------------

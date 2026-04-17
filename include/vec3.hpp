@@ -142,8 +142,9 @@ vec3<S> operator*(T alpha, const vec3<S>& v){
 	return copy;
 }
 
-template <typename T>
-T dot(const vec3<T>& u, const vec3<T>& v){
+template <typename T, typename S>
+requires std::convertible_to<S, T>
+T dot(const vec3<T>& u, const vec3<S>& v){
 	return u[0]*v[0] + u[1]*v[1] + u[2]*v[2];	
 }
 
