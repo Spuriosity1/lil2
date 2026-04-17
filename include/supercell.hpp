@@ -126,7 +126,7 @@ public:
     }
 
     inline dmat33_t get_reciprocal_lattice_vectors() const {
-        return (M_2_PI / wrap_to_index_cell.abs_det_latvecs) *
+        return (2.0 * M_PI / wrap_to_index_cell.abs_det_latvecs) *
              dmat33_t::from_other(wrap_to_index_cell.inv_latvecs_times_det.tr());
     }
 

@@ -53,38 +53,41 @@ struct FourierBuffer {
     }
 };
 
-// Inner product in k-space
-// Used for evaluating sums of the form
-// 1/N sum_{I, mu, J, nu} exp( -i (R_I + r_mu - R_J - r_nu).q  a(I, mu)b(J, nu))
-// Input: 
-// a, b FFT'd scalar fields
-template<typename T, typename coord_t>
-FourierBuffer<T> inner(const FourierBuffer<T>& a, const FourierBuffer<T>& b, 
-        const LatticeIndexing& lat, const std::vector<ipos_t>& sl_positions
-        ) {
+// Computes the k-space inner product (unnormalised structure factor):
+//
+//   result[K] = Σ_{μ,ν}  conj(Ã_μ(K)) · Ã_ν(K) · exp(+i q_K · (r_μ - r_ν))
+//
+// where q_K = B · K is the physical k-vector (B from get_reciprocal_lattice_vectors),
+// and r_μ / r_ν are sublattice positions.  Dividing by the total site count N gives
+// the physical structure factor S(q).
+//
+// The result is a single-sublattice FourierBuffer (one complex scalar per k-point).
+template<typename T>
+FourierBuffer<T> inner(const FourierBuffer<T>& a, const FourierBuffer<T>& b,
+        const LatticeIndexing& lat, const std::vector<ipos_t>& sl_positions) {
     assert(a.num_sublattices == b.num_sublattices);
+    assert(static_cast<int>(sl_positions.size()) == a.num_sublattices);
 
-    FourierBuffer<T> result(a.num_sublattices, a.k_dims);
+    // Scalar result: one entry per k-point
+    FourierBuffer<T> result(1, a.k_dims);
 
-    const auto& B = lat.get_reciprocal_lattice_vectors();
+    const auto B = lat.get_reciprocal_lattice_vectors();
 
-    for (int sl1 = 0; sl1 < a.num_sublattices; ++sl1) {
-        for (int sl2 = 0; sl2 < a.num_sublattices; ++sl2) {
-            idx3_t Q;
+    idx3_t Q;
+    for (Q[0]=0; Q[0]<lat.size(0); Q[0]++)
+    for (Q[1]=0; Q[1]<lat.size(1); Q[1]++)
+    for (Q[2]=0; Q[2]<lat.size(2); Q[2]++) {
+        const int i_flat = lat.flat_from_idx3(Q);
+        const auto q = B * vector3::vec3<double>(Q);
 
-            for (Q[0]=0; Q[0]<lat.size(0); Q[0]++)
-            for (Q[1]=0; Q[1]<lat.size(1); Q[1]++)
-            for (Q[2]=0; Q[2]<lat.size(2); Q[2]++)
-            {
-                int i_flat = lat.flat_from_idx3(Q);
-                auto q = B * Q; 
-
-                result.data[sl1][i_flat] = 
-                    std::conj(a.data[sl1][i_flat]) * b.data[sl1][i_flat] 
-                    * std::polar(1., -1.0* dot(q, vector3::vec3<double>(sl_positions[sl1] - sl_positions[sl2])) );
-                
+        std::complex<double> s = 0;
+        for (int sl1 = 0; sl1 < a.num_sublattices; ++sl1)
+            for (int sl2 = 0; sl2 < a.num_sublattices; ++sl2) {
+                const double arg = dot(q, vector3::vec3<double>(sl_positions[sl1] - sl_positions[sl2]));
+                s += std::conj(a.data[sl1][i_flat]) * b.data[sl2][i_flat]
+                   * std::exp(std::complex<double>(0, arg));
             }
-        }
+        result.data[0][i_flat] = s;
     }
     return result;
 }
