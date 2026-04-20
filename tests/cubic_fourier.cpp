@@ -311,10 +311,13 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
     const auto& sl_pos1 = std::get<SlPos<Spin>>(sc1.sl_positions);
     const auto& sl_pos2 = std::get<SlPos<Spin>>(sc2.sl_positions);
 
-    auto S1 = inner<Spin>(buf1, buf1, sc1.lattice,
-                          std::vector<ipos_t>(sl_pos1.begin(), sl_pos1.end()));
-    auto S2 = inner<Spin>(buf2, buf2, sc2.lattice,
-                          std::vector<ipos_t>(sl_pos2.begin(), sl_pos2.end()));
+    auto ph1 = SublatWeightMatrix::phase_factors(sc1.lattice,
+                   std::vector<ipos_t>(sl_pos1.begin(), sl_pos1.end()));
+    auto ph2 = SublatWeightMatrix::phase_factors(sc2.lattice,
+                   std::vector<ipos_t>(sl_pos2.begin(), sl_pos2.end()));
+
+    auto S1v = ph1.contract(correlate<Spin>(buf1, buf1));
+    auto S2v = ph2.contract(correlate<Spin>(buf2, buf2));
 
     const double tol = 1e-6 * np1 * np1;
     bool ok_cross = true;
@@ -327,19 +330,19 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
         const int f1 = sc1.lattice.flat_from_idx3(K2);
 
         // S1 vs S2 agreement
-        if (std::abs(S1.data[0][f1] - S2.data[0][f2]) > tol) {
+        if (std::abs(S1v[f1] - S2v[f2]) > tol) {
             std::cerr << "  structure factor mismatch at K=("
                       << K2[0] << "," << K2[1] << "," << K2[2] << "): S1="
-                      << S1.data[0][f1] << " S2=" << S2.data[0][f2] << "\n";
+                      << S1v[f1] << " S2=" << S2v[f2] << "\n";
             ok_cross = false;
         }
 
-        // Single-sublattice sanity: S1(K) == |Ã(K)|²
+        // Single-sublattice sanity: S1(K) == |Ã(K)|² (phase trivially 1 for 1-sl)
         const double mag2 = std::norm(buf1[0][f1]);
-        if (std::abs(S1.data[0][f1] - mag2) > tol) {
+        if (std::abs(S1v[f1] - mag2) > tol) {
             std::cerr << "  self-product mismatch at K=("
                       << K2[0] << "," << K2[1] << "," << K2[2] << "): S1="
-                      << S1.data[0][f1] << " |A|²=" << mag2 << "\n";
+                      << S1v[f1] << " |A|²=" << mag2 << "\n";
             ok_self = false;
         }
     }
