@@ -19,7 +19,21 @@ constexpr imat33_t unnormed_inverse(const imat33_t& A){
 }
 
 
+class BadMatrixError : public std::exception {
+    public:
+        BadMatrixError(const std::string& mat_name, const imat33_t& M, const std::string& context) {
+            message_ = context + "\n"+mat_name+"="+vector3::to_string(M);
+        }
+    const char* what() const throw() {
+        return message_.c_str();
+    }
+
+    private:
+    std::string message_;
+};
+
 // handles the maths for wrapping to within a cell
+// By design, requires a right-handed coordinate system in latvecs (det > 0).
 struct CellWrapper {
     const imat33_t latvecs;
     const imat33_t inv_latvecs_times_det;
@@ -29,7 +43,15 @@ struct CellWrapper {
         	latvecs(latvecs_),
 	inv_latvecs_times_det( unnormed_inverse(latvecs) ),
 	abs_det_latvecs(det(latvecs))
-    {}
+    {
+        if(abs_det_latvecs == 0){
+            throw BadMatrixError("latvecs", latvecs_, 
+                    "Cannot initalise CellWrapper with singular lattice vectors");
+        } else if (abs_det_latvecs < 0){
+            throw BadMatrixError("latvecs", latvecs_,
+                    "Cannot initalise CellWrapper with left-handed lattice vectors");
+        }
+    }
 
 
     void wrap(ipos_t& X) const {

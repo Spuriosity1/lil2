@@ -1,6 +1,7 @@
 #pragma once
 
 #include "smithNormalForm.hpp"
+#include "unitcell_types.hpp"
 #include "vec3.hpp"
 
 
@@ -25,13 +26,15 @@ inline SmithNormalFormCalculator::Matrix<T> to_snfmat(vector3::mat33<T>m){
 
 
 // convention: decomposition of a matrix A is L*A*R = D, D diagonal
-// Further: to work woth internal LIL routines, need 
+// Further: to work with internal LIL routines, need 
 // i) all D > 0
 // ii) det L > 0
-// iii) det R > 0 ?
+// iii) det R > 0
+//
 struct SNF_decomp {
 	SNF_decomp(
-			SmithNormalFormCalculator::SmithNormalFormDecomposition<int64_t>decomp ) : 
+			SmithNormalFormCalculator::SmithNormalFormDecomposition<int64_t>decomp,
+            bool ensure_positive=true) : 
 		L(from_snfmat(decomp.L)),
 		Linv(from_snfmat(SmithNormalFormCalculator::inverse(decomp.L))),
 		D(from_snfmat(decomp.D).diagonal()),
@@ -39,10 +42,11 @@ struct SNF_decomp {
 		Rinv(from_snfmat(SmithNormalFormCalculator::inverse(decomp.R)))
 	{
         for (int i=0; i<3; i++){
-            if (D[i] < 0) { 
-                // left-multiply by (-1,1,1) or similar
+            if (D[i] < 0) {
+                // left-multiply L by a sign-flip on row i; right-multiply Linv by the same
                 for (int j=0; j<3; j++){
                     L(i,j) *= -1;
+                    Linv(j,i) *= -1;  // column i of Linv
                 }
                 D[i] *= -1;
             }
@@ -56,12 +60,15 @@ struct SNF_decomp {
             Rinv *= -1;
         }
 
-//        if (det(R) < 0){
-//            R *= -1;
-//            Rinv *= -1;
-//            D *= -1;
-//        }
-
+        // mathematical fact guaranteed by det(D) >0, det(A)>0 and det(L)>0
+        if (ensure_positive && (det(R) <= 0) ) {
+            throw std::runtime_error(
+                    "Unexpected negative determinant encountered (L =\n"
+                    +vector3::to_string(L) + "D =\n" 
+                    +vector3::to_string(D) + "R =\n" 
+                    +vector3::to_string(R) + ")\n"
+                    );
+        }
     }
 
 	imat33_t L;

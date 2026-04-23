@@ -30,11 +30,19 @@ class LatticeIndexing {
     CellWrapper wrap_to_primitive;
 
 public:
-    LatticeIndexing( 
+    LatticeIndexing(
             const imat33_t& specified_cell_vectors, const imat33_t& supercell) :
-                	// Smith decopose the supercell spec to find a primitive cell that aligns 
+                	// Smith decopose the supercell spec to find a primitive cell that aligns
 	// nicely with the supercell
-	LDW(ComputeSmithNormalForm( to_snfmat(supercell))), // L supercell W = D
+	LDW([&]() -> SNF_decomp {
+            if (det(specified_cell_vectors) <= 0)
+                throw BadMatrixError("specified_cell_vectors", specified_cell_vectors,
+                    "LatticeIndexing requires right-handed (positive determinant) lattice vectors.");
+            if (det(supercell) <= 0)
+                throw BadMatrixError("supercell", supercell,
+                    "LatticeIndexing requires right-handed (positive determinant) supercell matrix.");
+            return ComputeSmithNormalForm(to_snfmat(supercell));
+        }()), // L supercell W = D
 	// Cell vectors only used for indexing
 	index_cell_vectors(specified_cell_vectors
 			* supercell * LDW.R), // equivalent to L^-1 D
@@ -105,6 +113,12 @@ public:
 
     void wrap_primitive(ipos_t& R) const {
         wrap_to_primitive.wrap(R);
+    }
+
+    bool is_same_pos(const ipos_t& R1, const ipos_t& R2) const {
+        ipos_t dx = R1 - R2;
+        wrap_super(dx);
+        return dx == ipos_t{0,0,0};
     }
 
     // guarantted to return a vector in lattice coords [-0.5,0.5)^3
@@ -347,6 +361,42 @@ struct Supercell {
         };
         
         return CellIterator{this};
+     }
+
+     auto enumerate_cell_index() const {
+         struct CellIndexIterator {
+             const LatticeIndexing* lat;
+
+             struct Iterator {
+                 idx_t current;
+                 idx_t total;
+                 const LatticeIndexing* lat;
+
+                 idx3_t operator*() const {
+                     return lat->idx3_from_flat(current);
+                 }
+                 
+                 Iterator& operator++() {
+                     ++current;
+                     return *this;
+                 }
+
+                bool operator!=(const Iterator& other) const {
+                    return current != other.current;
+                }
+            };
+            
+            Iterator begin() {
+                return {0, lat->num_primitive_cells(), lat};
+            }
+            
+            Iterator end() {
+                idx_t total = lat->num_primitive_cells();
+                return {total, total, lat};
+            }
+        
+         };
+         return CellIndexIterator(&lattice);
      }
 };
 

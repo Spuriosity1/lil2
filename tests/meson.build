@@ -43,6 +43,19 @@ sublat_correlator = executable('sublat_correlator', 'sublat_correlator.cpp',
   dependencies: main_deps
   )
 
+planar_vs_3D = executable('planar_vs_3D', 'planar_vs_3D.cpp',
+  include_directories: project_inc,
+  link_with: project_lib,
+  dependencies: main_deps
+  )
+
+
+basic_fourier = executable('basic_fourier', 'basic_fourier.cpp',
+  include_directories: project_inc,
+  link_with: project_lib,
+  dependencies: main_deps
+  )
+
 test('snf_dims', snf_dims)
 test('pyro_construct', pyro_construct, args: ['10', '0.5'])
 test('cubic_construct', cubic_construct, args: ['10', '0.5'])

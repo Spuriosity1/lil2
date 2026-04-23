@@ -1,0 +1,235 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{amsmath} 
+\usepackage{amssymb}
+\usepackage{parskip}
+\usepackage{braket}
+
+\newtheorem{definition}{Definition}
+
+\pagestyle{empty}
+\renewcommand{\baselinestretch}{1}
+
+
+\newcommand\bs[1]{\ensuremath\boldsymbol{#1}}
+\newcommand{\Z}[0]{\mathbb{Z}}
+
+\title{Generalised Indexing for integer lattice coordiantes}
+\author{Alaric Sanders}
+\begin{document}
+\maketitle
+
+\section{Lattices and Supercells} 
+
+\begin{definition}[Bravais Lattice]
+    A Bravais lattice over basis $a$ is an infinite, discrete collection of points of the form
+    \[
+        a \mathbb{Z}^d \equiv \{ a \bs{I} | \bs{I} \in \mathbb{Z}^d \}
+    \]
+\end{definition}
+
+\begin{definition}[Periodic Lattice]
+    A periodic lattice is (non-uniquely) specified by a pair $(a\mathbb{Z}^d, \mathcal{S})$ of a Bravais lattice and a finite list of real-valued sublattice positions $\mathcal{S} = \{\bs{r}_1, \bs{r}_2, ... \bs{r}_s\} )$, each lying within a single Bravais cell (in the sense that $a^{-1} \bs{r}_s \in [0,1)^d$). The lattice is then constructed by
+    $$ a\mathbb{Z}^3 + \mathcal{S} \equiv \bigsqcup_{\bs{r} \in \mathcal{S}} a \mathbb{Z}^3 + \bs{r} = \{ a \bs{I} + \bs{r} ~|~ \bs{I} \in \mathbb{Z}^d,\,\bs{r} \in \mathcal{S} \} $$
+\end{definition}
+
+\begin{definition}[Periodic Supercell]
+    A $Z$-periodic supercell of lattice $(a \mathbb{Z}^3, {\bs{r}_1,...,\bs{r}_s})$ is the quotient
+    \[
+        a \mathbb{Z}^3 / \{ \bs{x} + aQ \bs{I} \sim \bs{x} ~ \forall \bs{I} \in \mathbb{Z}^d \}
+    \]
+    We notate this as $a + \mathcal{S} \mod Z$.
+\end{definition}
+
+\begin{definition}[Smith Normal Form]
+    A Smith decomposition of the matrix $a$ is a triple of integer-valued matrices $(L,D,R)$ such that
+    \begin{enumerate}
+        \item $L a R = D$,
+        \item $L$ and $R$ are invertible, and
+        \item $D$ is diagonal.
+    \end{enumerate}
+    We will also adopt the conventions that i) $\det(L) = 1$ and ii) all entries of $D$ are non-negative (this can be trivially achieved by appropriate row operations).
+\end{definition}
+
+Input: A primitive unit cell $(a_0, \mathcal{S}_0)$, and periodicity $Z \in M_{d\times d}(\mathbb{Z})$.
+
+Output: A reshaped 
+
+
+\paragraph{Self-consistency.}
+If $Z$ is expressed as a product of matrices $Z = W X$, we have the sequence of Bravais lattices
+\[
+    a W X \mathbb{Z}^d \subset a W \mathbb{Z}^d \subset a \mathbb{Z}^d  
+\]
+Related to this, we may equivalently describe the supercell in three equivalent ways:
+\[
+    a\mathbb{Z}^3 + \mathcal{S}\mod WX \simeq 
+    aW\mathbb{Z}^3 + \mathcal{S} W \mod X \simeq 
+    aWX\mathbb{Z}^3 + \mathcal{S} W X  \mod 1
+\]
+where the product $\mathcal{S} W$ is precisely the representatives of $a\mathbb{Z}^3 + \mathcal{S} \mod W$ satisfying $\det(W) W^{-1} x \in \det(W)[0,1)^d$. Note that $\det(A)A^{-1}$ is pure integer valued.
+
+\section{Observables}
+
+A physical observable (taking values in the vector space $V$) is first defined on the (infinite) lattice, then in simulation restriced to some subset of these functions with the necessary supercell periodicity.
+
+There is a slight subtlety when it comes to defining observables on the lattice. The different sublattices are i) in general inequivalent under translational symmetries, and ii) located at different physical positions. Formally, we can write 
+\[
+    F\,:\, a\mathbb{Z}^z + \mathcal{S} \to V
+\]
+but in my opinion it's a little more useful to express this as
+\[
+    F_\mu(R_I + r_\mu),~I\in\mathbb{Z}^d,~r_\mu \in \mathcal{S}
+\]
+where the subscript on $F$ reminds that the sublattices may have different contributions to the physically measurable value (e.g. due to a spin's quantisation axis), and $+r_\mu$ reminds that the value is itself concentrated at the phsyical position $R_{\bs{I} \mu} \equiv a \bs{I} + r_\mu$ (having consequences for e.g. the response to a plane wave, or sublattice interference in the case of a non-primitive cell)
+
+
+Ignoring convergence issues for the moment, we are interested in scattering amplitudes taking the Fermi's Golden Rule form
+\begin{equation}
+    \frac{d\sigma}{d\Omega\,d\omega} \propto \left|\bra{\psi_f; E_f, \bs{k}_f, \sigma_f} H_I \ket{\psi_i; E_i, \bs{k}_i, \sigma_i} \right|^2
+    \label{eq:FGR}
+\end{equation}
+where the (interaction picture) interaction term convolves the neutron's magnetisation with the magnetisation texture of the sample. Dipole scattering has the kernel $O^{\alpha \beta}(r) = r^{-5} (3 r^\alpha r^\beta - r^2\delta^{\alpha \beta})$.
+
+\begin{align}
+    H_I &= - \int d^3 \bs{r_n}  \sum_{\bs{I}, \mu} \ket{r_n}\bra{r_n} \mu_N^\alpha O^{\alpha \beta}(r_n - R_{\bs{I}\mu}) m^\beta_{\bs{I}\mu}~,
+\end{align}
+where 
+\begin{align}
+    m^\beta_{\bs{I}\mu} = -\mu_B \sum_\beta  g_\mu^{\alpha\beta} S^\beta_{a\bs{I}+r_\mu}~.
+\end{align}
+Note that the $g$-tensor is, in general, sublattice dependent. The $S^\beta$ variables, though generally speaking spins, may label an arbitrary degree of freedom localised to the lattice site $R_{\bs{I} \mu}$.
+
+\begin{align}
+    \frac{d\sigma}{d\Omega d\omega}  &\propto O^{\alpha\beta}(\bs{q}) S^{\alpha \beta}(\bs{q}, \omega)\\
+     S^{\alpha \beta} (\bs{q}, \omega) &= \int dt\,e^{i\omega t}\sum_{I, I' \in \mathbb{Z}^3} \sum_{\mu, \mu' \in \mathcal{S}} e^{ i \bs{q}  \left[a(\bs{I}-\bs{I}') + r_\mu  -  r_{\mu'}) \right] } 
+                                       & \langle m^{\alpha}_{\bs{I}\mu}(t) m^{\beta}_{\bs{I}'\mu'}(0) \rangle
+\end{align}
+
+
+\section{Reciprocal Space}
+
+An infinite Bravais lattice is canonically related to an infinte, reciprocal lattice. 
+
+\begin{definition}[Reciprocal Lattice]
+    The reciprocal lattice of a Bravais lattice generated by matrix $A \in M_{d\times d}(\mathbb{R})$ is the
+    Bravais lattice generated by $B = 2\pi A^{-T}$:
+    \[
+        2\pi A^{-T} \mathbb{Z}^d \equiv \{ 2\pi A^{-T} \bs{K} \mid \bs{K} \in \mathbb{Z}^d \}
+    \]
+    It is characterised by the property $e^{i \bs{q} \cdot A\bs{I}} = 1$ for all $\bs{q} \in 2\pi A^{-T}\mathbb{Z}^d$
+    and $\bs{I} \in \mathbb{Z}^d$.
+\end{definition}
+
+\paragraph{Supercell Brillouin zone.}
+Periodic boundary conditions on a $Z$-periodic supercell of $(A\mathbb{Z}^d, \mathcal{S})$ restrict physical
+wavevectors to the sub-lattice $B_{\mathrm{sc}} \mathbb{Z}^d$ of the infinite reciprocal lattice, where
+$B_{\mathrm{sc}} = 2\pi(AC)^{-T}$. This sub-lattice has $|\det Z|$ points per primitive
+cell of $2\pi A^{-T}\mathbb{Z}^d$, which is to say the supercell Brillouin zone contains $|\det Z|$ distinct wavevectors.
+
+\section{Discrete Fourier Transform on the Supercell}
+
+\paragraph{Index cell and primitive cell.}
+Given a supercell specification $Z \in M_{d\times d}(\mathbb{Z})$ (expressing the supercell in units of the
+primitive cell matrix $A$), compute the Smith decomposition $L Z R = D$ with $D = \mathrm{diag}(d_0, d_1, d_2)$.
+This yields two natural cell matrices:
+\begin{align*}
+    P &= A L^{-1} \qquad \text{(primitive cell)} \\
+    M &= A Z R = P D \qquad \text{(index cell)} 
+\end{align*}
+They satisfy $M = P D$, so the index cell is $D$-fold larger than the primitive cell along each SNF axis.
+Both generate the same supercell lattice: $AZ\mathbb{Z}^d = M\mathbb{Z}^d \bmod AZ$. The integer grid
+$\bs{I} \in [0,d_0)\times[0,d_1)\times[0,d_2)$ provides a canonical label for each primitive cell in the supercell,
+with physical centre at $P\bs{I}$.
+
+\paragraph{DFT convention.}
+For a field $X_\mu(\bs{I})$ defined on primitive-cell index $\bs{I}$ and sublattice $\mu$, the library
+computes the forward DFT
+\begin{equation}
+    \tilde{X}^{\mathrm{raw}}_\mu(\bs{K})
+    = \sum_{\bs{I} \in [0,\bs{d})} X_\mu(\bs{I})\,
+      \exp\!\left(-2\pi i \sum_{s} \frac{K_s I_s}{d_s}\right),
+    \qquad \bs{K} \in [0,\bs{d})
+    \label{eq:dft}
+\end{equation}
+via a 3D FFTW C2C plan of dimensions $d_0 \times d_1 \times d_2$, in row-major order.
+
+cf. the magnetisation's Fourier transform (as appears in the structure factor)
+\begin{align}  
+    m^\alpha_{\bs{I} \mu}(\bs{k}) &= \frac{1}{\sqrt{N}} \sum_{I\alpha} \exp[-i \bs{k} (P\bs{I} + r_\mu) ] m^\alpha(aI + r_\mu) \nonumber\\
+                          &= \exp(-i \bs{k} r_\mu) \tilde{m}^{\alpha\,\text{raw}}_{\bs{I} \mu}(\bs{k})
+\end{align}
+
+The wavevector associated with DFT index $\bs{K}$ is therefore
+\begin{equation}
+    \bs{q}(\bs{K}) = B \bs{K}, \qquad B = 2\pi M^{-T} = 2\pi P^{-T} D^{-T}  .
+    \label{eq:bvec}
+\end{equation}
+The reciprocal lattice vectors form the matrix $B$; its columns span the
+supercell Brillouin zone.
+
+\paragraph{Sublattice phase and structure factor.}
+The raw output $\tilde{X}^{\mathrm{raw}}_\mu(\bs{K})$ omits the phase due to the sublattice
+displacement $\bs{r}_\mu$ within the primitive cell.  The physical (phase-corrected) amplitude is
+\[
+    \tilde{X}_\mu(\bs{K}) = e^{-i\bs{q}(\bs{K})\cdot\bs{r}_\mu}\,\tilde{X}^{\mathrm{raw}}_\mu(\bs{K}),
+\]
+
+For a general multiplet of local observables $\tilde{X}^\alpha_\mu(\bs{K})$, the structure factor with respect to some set of weights $g^{\alpha \beta}_\mu$ is
+\begin{equation}
+    S^{\alpha\beta}(\bs{K}) = \sum_{\mu,\nu} e^{+i\bs{q}\cdot(\bs{r}_\mu - \bs{r}_\nu)}\,
+    g_\mu^{\alpha \alpha'} 
+    g_\nu^{\beta \beta'}
+    \overline{\tilde{X}^{\mathrm{raw},\alpha}_\mu(\bs{K})}\,\tilde{X}^{\mathrm{raw}, \beta}_\nu(\bs{K}).
+    \label{eq:sfac}
+\end{equation}
+The phase factors in~\eqref{eq:sfac} are precomputed by \texttt{SublatWeightMatrix::phase\_factors()}.
+
+\section{Backfolding and Change of Representation}
+
+\paragraph{Setup.}
+By the self-consistency relation of Section~1, the same physical supercell admits two descriptions:
+\begin{description}
+    \item[Rep.\ 1] Primitive cell $A$, supercell $WZ$, single sublattice $\mathcal{S}_0$.\\
+        SNF: $L_1(WZ)R_1 = D_1$;\quad index cell $M_1 = A(WZ)R_1$;\quad grid $\bs{K}_1 \in [0,\bs{d}_1)$.
+    \item[Rep.\ 2] Primitive cell $AW$, supercell $Z$, sublattices $\mathcal{S}_W$ (the $|\det W|$ images of
+        $\mathcal{S}_0$ inside one $W$-fold cell).\\
+        SNF: $L_2 Z R_2 = D_2$;\quad index cell $M_2 = (AW)ZR_2$;\quad grid $\bs{K}_2 \in [0,\bs{d}_2)$.
+\end{description}
+The two grids have $|\det(WZ)|$ and $|\det Z|$ points respectively.
+
+\paragraph{Wavevector correspondence.}
+The DFT index $\bs{K}_1$ in Rep.\ 1 corresponds to physical wavevector
+$\bs{q}(\bs{K}_1) = B_1\bs{K}_1 = 2\pi M_1^{-T}\bs{K}_1$.
+The index $\bs{K}_2$ in Rep.\ 2 representing the same wavevector satisfies
+$B_2\bs{K}_2 = B_1\bs{K}_1$, giving
+\begin{equation}
+    \bs{K}_2 = M_2^T M_1^{-T}\, \bs{K}_1 \pmod{\bs{d}_2}.
+    \label{eq:kmap}
+\end{equation}
+In the common case that $R_1 = R_2 = I$ (e.g.\ when $WZ$ is diagonal),
+$M_1 = M_2$, and~\eqref{eq:kmap} reduces to the familiar $\bs{K}_2 = \bs{K}_1 \bmod \bs{d}_2$.
+However, when the SNF algorithm chooses a non-trivial $R_1 \neq I$ for one representation
+but not the other, $M_1 \neq M_2$, and the naive component-wise reduction is \emph{incorrect}.
+
+\paragraph{Backfolding identity.}
+With $\bs{K}_2$ determined by~\eqref{eq:kmap}, the two DFT outputs are related by
+\begin{equation}
+    \tilde{X}^{\mathrm{raw}}_1(\bs{K}_1)
+    = \sum_{\mu} e^{-i\bs{q}(\bs{K}_1)\cdot \bs{r}_\mu}\;
+      \tilde{X}^{\mathrm{raw}}_{2,\mu}(\bs{K}_2)
+    \label{eq:backfold}
+\end{equation}
+where $\{\bs{r}_\mu\}$ are the sublattice positions of Rep.\ 2 (the $|\det W|$ sites of $\mathcal{S}_W$
+inside the $AW$ primitive cell). Equation~\eqref{eq:backfold} is proved by splitting the DFT
+sum~\eqref{eq:dft} of Rep.\ 1 by cosets of the $W$-sublattice: writing every site of Rep.\ 1 as
+$P_1\bs{I}_1 = P_2\bs{J} + \bs{r}_\mu$ for a unique pair $(\bs{J}, \mu)$, the exponential
+$e^{-2\pi i \bs{K}_1\cdot \bs{I}_1/\bs{d}_1}$ factors into the sublattice phase $e^{-i\bs{q}\cdot\bs{r}_\mu}$
+and the DFT phase of Rep.\ 2 at $\bs{K}_2$.
+
+\paragraph{Consequence for structure factors.}
+Equation~\eqref{eq:backfold} implies that $S(\bs{K}_1)$ from Rep.\ 1
+equals $S(\bs{K}_2)$ from Rep.\ 2 (computed via~\eqref{eq:sfac} with the appropriate sublattice weights),
+so physical observables are independent of the choice of primitive cell.
+
+
+\end{document}

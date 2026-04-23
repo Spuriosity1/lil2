@@ -2,6 +2,7 @@
 
 #include "supercell.hpp"
 #include <complex>
+#include <numeric>
 #include <type_traits>
 #include <fftw3.h>
 
@@ -294,4 +295,192 @@ public:
 template<typename T, auto MemberPtr, GeometricObject... Ts>
 auto make_fourier_transform(Supercell<Ts...>& sc) {
     return FourierTransformC2C<T, FieldAccessor<T, MemberPtr>, Ts...>(sc);
+}
+
+
+// Describes a 2D plane in BZ-index space, parameterised as:
+//
+//   K(n1, n2) = n1·e1 + n2·e2,   n1 ∈ [0, N1),  n2 ∈ [0, N2)
+//
+// N1 and N2 are computed automatically from e1/e2 and the lattice dimensions D:
+//   N = lcm_j( D[j] / gcd(|e[j]|, D[j]) )
+// This is the smallest period such that the fold coordinate
+//   φ(I) = Σ_j e[j]·I[j]·N/D[j]   mod N
+// is integer-valued and hits every value in [0,N) uniformly.
+//
+// Example — h,h,l plane on an L×L×L supercell:
+//   KPlaneSpec spec({1,1,0}, {0,0,1}, sc.lattice.size());  → N1=L, N2=L
+struct KPlaneSpec {
+    ivec3_t e1, e2;
+    int N1, N2;
+
+    // Compute the period for one step vector
+    static int auto_N(const ivec3_t& e, const ivec3_t& D) {
+        int n = 1;
+        for (int j = 0; j < 3; ++j) {
+            int ej = static_cast<int>(std::abs(e[j]));
+            int dj = static_cast<int>(D[j]);
+            n = std::lcm(n, dj / std::gcd(ej, dj));
+        }
+        return n;
+    }
+
+    KPlaneSpec(ivec3_t e1_, ivec3_t e2_, const ivec3_t& D)
+        : e1(e1_), e2(e2_),
+          N1(auto_N(e1_, D)), N2(auto_N(e2_, D)) {}
+};
+
+
+// Sublattice-resolved Fourier transform restricted to a 2D plane in k-space.
+//
+// At each transform() call, real-space data is folded along the direction
+// perpendicular to the plane (O(N_sites)), then a 2D FFTW transform is
+// executed (O(N1·N2·log(N1·N2))).  This avoids allocating or computing the
+// full 3D k-space grid.
+//
+// The output FourierBuffer has k_dims = {N1, N2, 1}; flat index n1*N2+n2
+// corresponds to k-point K = n1·e1 + n2·e2.
+// correlate(), FourierCorrelator, and SublatWeightMatrix all work unchanged.
+// Call make_phase_weights() to get the sublattice phase matrix for this plane.
+template<typename T, typename Accessor, GeometricObject... Ts>
+class FourierTransformPlanar {
+    Supercell<Ts...>* sc;
+    KPlaneSpec spec;
+    int num_sublattices;
+    int num_prim;
+
+    // fold_idx[i_flat] = n1*N2 + n2  for the 2D output grid
+    std::vector<int> fold_idx;
+
+    std::vector<fftw_complex*> rs_data;  // plane_size per sublattice
+    std::vector<fftw_complex*> ks_data;
+    std::vector<fftw_plan> plans;
+
+    FourierBuffer<T> buffer;  // k_dims = {N1, N2, 1}
+
+    void build_fold_map() {
+        const auto D = sc->lattice.size();
+        const int N1 = spec.N1, N2 = spec.N2;
+
+        // α[j] = e[j] * N / D[j]  — guaranteed integer by construction of N
+        ivec3_t alpha1, alpha2;
+        for (int j = 0; j < 3; ++j) {
+            alpha1[j] = spec.e1[j] * N1 / static_cast<int>(D[j]);
+            alpha2[j] = spec.e2[j] * N2 / static_cast<int>(D[j]);
+        }
+
+        fold_idx.resize(num_prim);
+        std::vector<int> count(N1 * N2, 0);
+
+        for (int i = 0; i < num_prim; ++i) {
+            const auto I = sc->lattice.idx3_from_flat(i);
+            int raw1 = static_cast<int>(alpha1[0]*I[0] + alpha1[1]*I[1] + alpha1[2]*I[2]);
+            int raw2 = static_cast<int>(alpha2[0]*I[0] + alpha2[1]*I[1] + alpha2[2]*I[2]);
+            int j1 = ((raw1 % N1) + N1) % N1;
+            int j2 = ((raw2 % N2) + N2) % N2;
+            fold_idx[i] = j1 * N2 + j2;
+            ++count[j1 * N2 + j2];
+        }
+
+        // Validate: every 2D grid point is hit equally often
+        const int expected = num_prim / (N1 * N2);
+        for (int c : count)
+            if (c != expected)
+                throw std::runtime_error(
+                    "KPlaneSpec: fold is not uniform — "
+                    "e1 and e2 are not compatible with these lattice dimensions");
+    }
+
+public:
+    FourierTransformPlanar(Supercell<Ts...>& supercell, const KPlaneSpec& spec_)
+        : sc(&supercell), spec(spec_),
+          num_prim(sc->lattice.num_primitive_cells()),
+          buffer(std::get<SlPos<T>>(sc->sl_positions).size(),
+                 {spec_.N1, spec_.N2, 1})
+    {
+        num_sublattices = buffer.num_sublattices;
+        const int plane_size = spec.N1 * spec.N2;
+
+        build_fold_map();
+
+        for (int sl = 0; sl < num_sublattices; ++sl) {
+            rs_data.push_back(fftw_alloc_complex(plane_size));
+            ks_data.push_back(fftw_alloc_complex(plane_size));
+            plans.push_back(fftw_plan_dft_2d(
+                spec.N1, spec.N2,
+                rs_data[sl], ks_data[sl],
+                FFTW_FORWARD, FFTW_MEASURE
+            ));
+        }
+    }
+
+    ~FourierTransformPlanar() {
+        for (int sl = 0; sl < num_sublattices; ++sl) {
+            fftw_destroy_plan(plans[sl]);
+            fftw_free(rs_data[sl]);
+            fftw_free(ks_data[sl]);
+        }
+    }
+
+    void transform() {
+        auto& objects = sc->template get_objects<T>();
+        const int plane_size = spec.N1 * spec.N2;
+
+        for (int sl = 0; sl < num_sublattices; ++sl) {
+            // Zero fold buffer
+            for (int k = 0; k < plane_size; ++k)
+                rs_data[sl][k][0] = rs_data[sl][k][1] = 0.0;
+
+            // Fold: accumulate real-space values into the 2D grid
+            for (int i = 0; i < num_prim; ++i) {
+                rs_data[sl][fold_idx[i]][0] +=
+                    Accessor::get(objects[sl * num_prim + i]);
+                // imaginary part stays 0 (real-valued input field)
+            }
+
+            fftw_execute(plans[sl]);
+
+            for (int k = 0; k < plane_size; ++k)
+                buffer[sl][k] = {ks_data[sl][k][0], ks_data[sl][k][1]};
+        }
+    }
+
+    // Sublattice phase weight matrix for this plane.
+    // w(μ,ν)[k] = exp(+i q_k · (r_μ − r_ν))  where  q_k = B·K(n1,n2).
+    // Flat index k = n1*N2 + n2.
+    SublatWeightMatrix make_phase_weights(
+            const std::vector<ipos_t>& sl_positions) const {
+        const int num_sl = static_cast<int>(sl_positions.size());
+        const int N1 = spec.N1, N2 = spec.N2;
+        SublatWeightMatrix w(num_sl, {N1, N2, 1});
+        const auto B = sc->lattice.get_reciprocal_lattice_vectors();
+
+        for (int n1 = 0; n1 < N1; ++n1)
+            for (int n2 = 0; n2 < N2; ++n2) {
+                const int k_flat = n1 * N2 + n2;
+                const auto q = B * vector3::vec3<double>(
+                    spec.e1[0]*n1 + spec.e2[0]*n2,
+                    spec.e1[1]*n1 + spec.e2[1]*n2,
+                    spec.e1[2]*n1 + spec.e2[2]*n2);
+                for (int mu = 0; mu < num_sl; ++mu)
+                    for (int nu = 0; nu < num_sl; ++nu) {
+                        const double arg = dot(q, vector3::vec3<double>(
+                                sl_positions[mu] - sl_positions[nu]));
+                        w(mu, nu)[k_flat] = std::polar(1.0, arg);
+                    }
+            }
+        return w;
+    }
+
+    const FourierBuffer<T>& get_buffer() const { return buffer; }
+    FourierBuffer<T>& get_buffer() { return buffer; }
+    const KPlaneSpec& get_spec() const { return spec; }
+};
+
+// Factory function:
+//   KPlaneSpec hhl({1,1,0}, {0,0,1}, sc.lattice.size());
+//   auto ft = make_planar_fourier_transform<Spin, &Spin::Sz>(sc, hhl);
+template<typename T, auto MemberPtr, GeometricObject... Ts>
+auto make_planar_fourier_transform(Supercell<Ts...>& sc, const KPlaneSpec& spec) {
+    return FourierTransformPlanar<T, FieldAccessor<T, MemberPtr>, Ts...>(sc, spec);
 }

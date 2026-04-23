@@ -379,9 +379,9 @@ std::ostream& operator<<(std::ostream& os, const vec3<T>& v){
 
 template<typename T>
 std::ostream& operator<<(std::ostream& os, const mat33<T>& m){
-	os << "["<<m(0,0)<<"\t"<<m(0,1)<<"\t"<<m(0,2)<<"]\n";
-	os << "["<<m(1,0)<<"\t"<<m(1,1)<<"\t"<<m(1,2)<<"]\n";
-	os << "["<<m(2,0)<<"\t"<<m(2,1)<<"\t"<<m(2,2)<<"]\n";
+	os << "["<<m(0,0)<<" "<<m(0,1)<<" "<<m(0,2)<<"] \\n";
+	os << "["<<m(1,0)<<" "<<m(1,1)<<" "<<m(1,2)<<"] \\n";
+	os << "["<<m(2,0)<<" "<<m(2,1)<<" "<<m(2,2)<<"] ";
 	return os;
 }
 
