@@ -311,6 +311,8 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
 
     // K-match condition: B1*K1 = B2*K2  ⟺  K1 = M1ᵀ · M2⁻ᵀ · K2
     // Iterate over the smaller sc2 BZ; each K2 maps to exactly one K1 in sc1.
+    // Note that the converse is NOT true: sc1 has more points in the BZ, not 
+    // all have an equivalent in sc2.
     auto M2_inv_tr = unnormed_inverse(M2).tr();
     auto det_M2 = det(M2);
 
