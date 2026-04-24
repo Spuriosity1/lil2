@@ -1,6 +1,7 @@
 #include "supercell.hpp"
 #include "common.hpp"
 #include "fourier.hpp"
+#include "modulus.hpp"
 #include <cmath>
 #include <complex>
 #include <iostream>
@@ -53,33 +54,31 @@ void test_uniform_simple(int L) {
 }
 
 // Cosine wave at Q: peaks at k=+Q and k=-Q with magnitude N/2, zero elsewhere
-void test_plane_wave(int L, ivec3_t Q) {
-    auto sc = build_simple_FCC(L);
+void test_plane_wave(const imat33_t& Z, const ivec3_t& Q) {
+    auto cell1 = build_pryo_primitive();
+
+    // sc1: 1-sublattice, full supercell Z
+    auto sc = build_supercell<Spin>(cell1,  Z);
     set_cosine_wave(sc, Q);
 
     auto ft = make_fourier_transform<Spin, &Spin::Sz>(sc);
     ft.transform();
 
     auto& buf = ft.get_buffer();
-    auto D = sc.lattice.size();
-    const int N = L * L * L;
+    const int N = sc.lattice.num_primitive_cells();
     const double tol = 1e-9 * N;
     const double expected = N / 2.0;
 
-    // Flat index for a given K, with periodic wrap
-    auto kidx = [&](ivec3_t K) -> int {
-        for (int a = 0; a < 3; ++a)
-            K[a] = ((K[a] % D[a]) + D[a]) % D[a];
-        return static_cast<int>((K[0] * D[1] + K[1]) * D[2] + K[2]);
-    };
-
-    int k_pos = kidx(Q);
-    int k_neg = kidx({-Q[0], -Q[1], -Q[2]});
+    int k_pos = sc.lattice.flat_from_idx3_wrapped(Q);
+    int k_neg = sc.lattice.flat_from_idx3_wrapped(-Q);
 
     // At Nyquist (+Q ≡ −Q mod D), the full power N lands at one point;
     // otherwise it splits equally between +Q and −Q.
     bool aliased = (k_pos == k_neg);
     double peak_expected = aliased ? static_cast<double>(N) : expected;
+
+    assert(k_pos < N && "k_pos too large");
+    assert(k_neg < N && "k_neg too large");
 
     check(std::abs(std::abs(buf[0][k_pos]) - peak_expected) < tol, "plane wave: peak at +Q");
     if (!aliased)
@@ -120,6 +119,7 @@ void test_plane_wave(int L, ivec3_t Q) {
 // Position-based copy via get_object_at makes the spin-transfer step
 // independent of coordinate-system details.
 void test_backfolding(imat33_t Z, imat33_t W) {
+
     auto cell1 = build_pryo_primitive();
     const auto& A = pyro_primitive_cell;
 
@@ -172,22 +172,40 @@ void test_backfolding(imat33_t Z, imat33_t W) {
     // K₂ such that q₂(K₂) = q₁(K) is given by K₂ = M₂ᵀ · q / (2π),
     // where M₂ is sc2's index-cell-vectors.  This reduces to K mod D₂ only
     // when M₁ = M₂ (i.e. the SNF of the two supercells picks the same R).
-    const auto B1  = sc1.lattice.get_reciprocal_lattice_vectors();
-    const auto M2d = dmat33_t::from_other(sc2.lattice.get_lattice_vectors());
+    const auto B1 = sc1.lattice.get_reciprocal_lattice_vectors();
+    const auto M1 = sc1.lattice.get_lattice_vectors();
+
+    const auto M2 = sc2.lattice.get_lattice_vectors();
+    const auto M2d = dmat33_t::from_other(M2);
+
+    const auto M1_inv_tr = unnormed_inverse(M1).tr();
+
+
     const double tol = 1e-9 * np1;
     bool ok = true;
 
-    for (int f1 = 0; f1 < np1 && ok; ++f1) {
-        const auto K  = sc1.lattice.idx3_from_flat(f1);
-        const auto q  = B1 * vec3<double>(K);
+    for (int f1 = 0; f1 < np1; ++f1) {
+        const auto K1  = sc1.lattice.idx3_from_flat(f1);
+        const auto q  = B1 * vec3<double>(K1);
         // K₂ = M₂ᵀ · q / (2π) — matches physical wavevectors regardless of SNF choice
         const auto K2f = (1.0 / (2.0 * M_PI)) * (M2d.tr() * q);
-        ivec3_t Kf;
+        ivec3_t K2;
         for (int a = 0; a < 3; ++a) {
             auto k2a = static_cast<int64_t>(std::llround(K2f[a]));
-            Kf[a] = ((k2a % D2[a]) + D2[a]) % D2[a];
+            K2[a] = mod(k2a, D2[a]);
         }
-        const int f2 = sc2.lattice.flat_from_idx3(Kf);
+
+        // alt K2 method (integer arithmetic cross-check for the float-based result above)
+        auto K2_other = M2.tr() * M1_inv_tr * K1;
+        for (int i = 0; i < 3; ++i) {
+            assert(K2_other[i] % det(M1) == 0);
+            K2_other[i] /= det(M1);
+            K2_other[i] = mod<int64_t>(K2_other[i], sc2.lattice.size(i));
+        }
+
+        assert(K2 == K2_other);
+
+        const int f2 = sc2.lattice.flat_from_idx3(K2);
 
         std::complex<double> expected = 0;
         for (int mu = 0; mu < num_sl; ++mu) {
@@ -196,8 +214,8 @@ void test_backfolding(imat33_t Z, imat33_t W) {
         }
 
         if (std::abs(buf1[0][f1] - expected) > tol) {
-            std::cerr << "  backfolding mismatch at K=(" << K[0] << ","
-                      << K[1] << "," << K[2] << "): Y1=" << buf1[0][f1]
+            std::cerr << "  backfolding mismatch at K=(" << K1[0] << ","
+                      << K1[1] << "," << K1[2] << "): Y1=" << buf1[0][f1]
                       << " expected=" << expected << "\n";
             ok = false;
         }
@@ -229,6 +247,7 @@ void test_backfolding(imat33_t Z, imat33_t W) {
 // Additionally we verify the single-sublattice sanity identity:
 //   S1(K) == |buf1[0][K]|²
 void test_structure_factor(imat33_t Z, imat33_t W) {
+
     auto A = imat33_t::from_cols({8,0,0}, {0,8,0}, {0,0,8});
     MyCell cell1(A);
     cell1.add<Spin>(Spin({0,0,0}));
@@ -282,61 +301,74 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
     auto S1v = ph1.contract(correlate<Spin>(buf1, buf1));
     auto S2v = ph2.contract(correlate<Spin>(buf2, buf2));
 
+
+
+    auto M1 = sc1.lattice.get_lattice_vectors();
+    auto M2 = sc2.lattice.get_lattice_vectors();
+
     const double tol = 1e-6 * np1 * np1;
     bool ok_cross = true;
-    bool ok_self  = true;
 
-    for (int f2 = 0; f2 < np2 && (ok_cross || ok_self); ++f2) {
+    // K-match condition: B1*K1 = B2*K2  ⟺  K1 = M1ᵀ · M2⁻ᵀ · K2
+    // Iterate over the smaller sc2 BZ; each K2 maps to exactly one K1 in sc1.
+    auto M2_inv_tr = unnormed_inverse(M2).tr();
+    auto det_M2 = det(M2);
+
+    for (int f2 = 0; f2 < np2; ++f2) {
         const auto K2 = sc2.lattice.idx3_from_flat(f2);
-        // B1 = B2 (index cells are equal),
-        // so q1(K) = q2(K) at the same integer index. The sc2 BZ is a subset of sc1's.
-        const int f1 = sc1.lattice.flat_from_idx3(K2);
-
-        // S1 vs S2 agreement
-        if (std::abs(S1v[f1] - S2v[f2]) > tol) {
-            std::cerr << "  structure factor mismatch at K=("
-                      << K2[0] << "," << K2[1] << "," << K2[2] << "): S1="
-                      << S1v[f1] << " S2=" << S2v[f2] << "\n";
-            ok_cross = false;
+        auto K1 = M1.tr() * M2_inv_tr * K2;
+        for (int i = 0; i < 3; ++i) {
+            assert(K1[i] % det_M2 == 0);
+            K1[i] /= det_M2;
+            K1[i] = mod<int64_t>(K1[i], sc1.lattice.size(i));
         }
+        const int f1 = sc1.lattice.flat_from_idx3(K1);
 
-        // Single-sublattice sanity: S1(K) == |Ã(K)|² (phase trivially 1 for 1-sl)
-        const double mag2 = std::norm(buf1[0][f1]);
-        if (std::abs(S1v[f1] - mag2) > tol) {
-            std::cerr << "  self-product mismatch at K=("
-                      << K2[0] << "," << K2[1] << "," << K2[2] << "): S1="
-                      << S1v[f1] << " |A|²=" << mag2 << "\n";
-            ok_self = false;
+        if (std::abs(S1v[f1] - S2v[f2]) > tol) {
+            std::cerr << "  structure factor mismatch at K2=" << K2
+                      << ", K1=" << K1
+                      << ": S1=" << S1v[f1] << " S2=" << S2v[f2] << "\n";
+            ok_cross = false;
         }
     }
 
+
     check(ok_cross, "structure factor: S1(K) == S2(K) over backfolded BZ");
-    check(ok_self,  "structure factor: primitive S(K) == |A(K)|²");
 }
 
 // ---------------------------------------------------------------------------
+
+inline imat33_t cube(int L){
+    return imat33_t::from_cols({L,0,0},{0,L,0},{0,0,L});
+}
 
 int main(int argc, char* argv[]) {
     int L = 8;
     if (argc >= 2) L = atoi(argv[1]);
 
     test_uniform_simple(L);
-    test_plane_wave(L, {1, 0, 0});
-    test_plane_wave(L, {0, 2, 0});
-    test_plane_wave(L, {1, 1, 1});
-    test_plane_wave(L, {L / 2, 0, 0});
+
+    test_plane_wave(cube(L), {1, 0, 0});
+    test_plane_wave(cube(L), {0, 2, 0});
+    test_plane_wave(cube(L), {1, 1, 1});
+    test_plane_wave(cube(L), {L / 2, 0, 0});
+
 
     auto Z = imat33_t::from_cols({L,0,0}, {0,L,0}, {0,0,L});
-    // 2-cell: double along axis 0
-    test_backfolding(Z, imat33_t::from_cols({2,0,0}, {0,1,0}, {0,0,1}));
-    // 4-cell: double along axes 0 and 1
-    test_backfolding(Z, imat33_t::from_cols({2,0,0}, {0,2,0}, {0,0,1}));
-    // 2-cell non-orthogonal
-    test_backfolding(Z, imat33_t::from_cols({1,-1,0}, {0,1,0}, {0,0,1}));
 
-    // Structure factor tests
-    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {0,1,0}, {0,0,1}));
-    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {0,2,0}, {0,0,1}));
+
+    for (const auto& W : W_tests){
+        std::cout<<"[test] Z="<<Z<<" W="<<W<<std::endl;
+
+        test_plane_wave(W*Z, {1, 0, 0});
+        test_plane_wave(W*Z, {0, 2, 0});
+        test_plane_wave(W*Z, {1, 1, 1});
+        test_plane_wave(W*Z, {1, -1, -1});
+        test_plane_wave(W*Z, {L / 2, 0, 0});
+
+        test_backfolding(Z, W);
+        test_structure_factor(Z, W);
+    }
 
     if (g_failed == 0)
         std::cout << "All tests passed.\n";

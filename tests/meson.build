@@ -1,10 +1,10 @@
 
 
-#pyro_test_bin = executable('pyro_test', 'pyro_test.cpp', 
-#  include_directories:project_inc,
-#  link_with: project_lib,
-#  dependencies: main_deps
-#  )
+single_valued = executable('single_valued', 'single_valued.cpp',
+  include_directories:project_inc,
+  link_with: project_lib,
+  dependencies: main_deps
+  )
 
 pyro_construct = executable('pyro_construct', 'pyro_construct.cpp',
   include_directories:project_inc,

@@ -76,6 +76,14 @@ public:
 		return (I[0]*LDW.D[1] + I[1])*LDW.D[2] + I[2];
 	}
 
+    inline idx_t flat_from_idx3_wrapped(idx3_t I) const {
+        for (int a=0; a<3; a++){
+            I[a] = mod(I[a], LDW.D[a]);
+        }
+        return flat_from_idx3(I);
+    }
+
+
     // Internal row major order for compatibility with fftw
     inline idx3_t idx3_from_flat(idx_t i) const {
         idx3_t I;
