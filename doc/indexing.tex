@@ -11,7 +11,8 @@
 
 
 \newcommand\bs[1]{\ensuremath\boldsymbol{#1}}
-\newcommand{\Z}[0]{\mathbb{Z}}
+\def\Z{\mathbb{Z}}
+\def\raw{\mathrm{raw}}
 
 \title{Generalised Indexing for integer lattice coordiantes}
 \author{Alaric Sanders}
@@ -145,7 +146,7 @@ with physical centre at $P\bs{I}$.
 For a field $X_\mu(\bs{I})$ defined on primitive-cell index $\bs{I}$ and sublattice $\mu$, the library
 computes the forward DFT
 \begin{equation}
-    \tilde{X}^{\mathrm{raw}}_\mu(\bs{K})
+    \tilde{X}^{\raw}_\mu(\bs{K})
     = \sum_{\bs{I} \in [0,\bs{d})} X_\mu(\bs{I})\,
       \exp\!\left(-2\pi i \sum_{s} \frac{K_s I_s}{d_s}\right),
     \qquad \bs{K} \in [0,\bs{d})
@@ -168,10 +169,10 @@ The reciprocal lattice vectors form the matrix $B$; its columns span the
 supercell Brillouin zone.
 
 \paragraph{Sublattice phase and structure factor.}
-The raw output $\tilde{X}^{\mathrm{raw}}_\mu(\bs{K})$ omits the phase due to the sublattice
+The raw output $\tilde{X}^{\raw}_\mu(\bs{K})$ omits the phase due to the sublattice
 displacement $\bs{r}_\mu$ within the primitive cell.  The physical (phase-corrected) amplitude is
 \[
-    \tilde{X}_\mu(\bs{K}) = e^{-i\bs{q}(\bs{K})\cdot\bs{r}_\mu}\,\tilde{X}^{\mathrm{raw}}_\mu(\bs{K}),
+    \tilde{X}_\mu(\bs{K}) = e^{-i\bs{q}(\bs{K})\cdot\bs{r}_\mu}\,\tilde{X}^{\raw}_\mu(\bs{K}),
 \]
 
 For a general multiplet of local observables $\tilde{X}^\alpha_\mu(\bs{K})$, the structure factor with respect to some set of weights $g^{\alpha \beta}_\mu$ is
@@ -179,12 +180,106 @@ For a general multiplet of local observables $\tilde{X}^\alpha_\mu(\bs{K})$, the
     S^{\alpha\beta}(\bs{K}) = \sum_{\mu,\nu} e^{+i\bs{q}\cdot(\bs{r}_\mu - \bs{r}_\nu)}\,
     g_\mu^{\alpha \alpha'} 
     g_\nu^{\beta \beta'}
-    \overline{\tilde{X}^{\mathrm{raw},\alpha}_\mu(\bs{K})}\,\tilde{X}^{\mathrm{raw}, \beta}_\nu(\bs{K}).
+    \overline{\tilde{X}^{\raw,\alpha}_\mu(\bs{K})}\,\tilde{X}^{raw, \beta}_\nu(\bs{K}).
     \label{eq:sfac}
 \end{equation}
 The phase factors in~\eqref{eq:sfac} are precomputed by \texttt{SublatWeightMatrix::phase\_factors()}.
 
-\section{Backfolding and Change of Representation}
+\paragraph{Friedel symmetry.}
+For a scalar observable, equation~\eqref{eq:sfac} simplifies to
+\begin{equation}
+    S(\bs{K}) = \left|\sum_\mu e^{-i\bs{q}(\bs{K})\cdot\bs{r}_\mu}\,
+                      \tilde{X}^{\raw}_\mu(\bs{K})\right|^2,
+    \label{eq:sfac_scalar}
+\end{equation}
+which is a modulus squared and therefore manifestly real and non-negative.
+For a real-valued field ($X_\mu(\bs{I})\in\mathbb{R}$) the DFT satisfies
+$\tilde{X}^{\raw}_\mu(-\bs{K}) = \overline{\tilde{X}^{\raw}_\mu(\bs{K})}$,
+so
+\[
+    \sum_\mu e^{-i\bs{q}(-\bs{K})\cdot\bs{r}_\mu}\,\tilde{X}^{\raw}_\mu(-\bs{K})
+    = \sum_\mu e^{+i\bs{q}(\bs{K})\cdot\bs{r}_\mu}\,
+      \overline{\tilde{X}^{\raw}_\mu(\bs{K})}
+    = \overline{\sum_\mu e^{-i\bs{q}(\bs{K})\cdot\bs{r}_\mu}\,
+      \tilde{X}^{\raw}_\mu(\bs{K})}\,.
+\]
+Taking the modulus squared gives $S(-\bs{K}) = S(\bs{K})$ (Friedel's law):
+the structure factor of any real-valued field is inversion-symmetric.
+This is an exact algebraic identity that any correct implementation must
+reproduce.
+
+\section{Backfolding and Friedel symmetry}
+
+\paragraph{Form factors and negative $\bs{K}$ values.}
+FFTW stores $\tilde{X}^{\raw}_\mu(\bs{K})$ at flat index $k$ corresponding to
+$\bs{K}\in[0,\bs{d})^3$.  For a real-valued field the DFT satisfies the
+conjugation identity
+\begin{equation}
+    \tilde{X}^{\raw}_\mu(\bs{d}-\bs{K}) = \overline{\tilde{X}^{\raw}_\mu(\bs{K})},
+    \label{eq:conj}
+\end{equation}
+where $\bs{d}-\bs{K}$ is taken component-wise modulo $\bs{d}$ (with $0\mapsto 0$).
+The flat index of $\bs{d}-\bs{K}$ is returned by \texttt{flat\_from\_idx3\_wrapped}.
+
+One might expect that $S(\texttt{flat\_from\_idx3\_wrapped}(k)) = S(k)$ then follows from
+Friedel's law.  This is \emph{not} automatic, because \texttt{phase\_factors}
+assigns wavevector $\bs{q}(\bs{K})=B\bs{K}$ to every flat index $k$, and
+therefore assigns to flat index $\texttt{flat\_from\_idx3\_wrapped}(k)$ the wavevector
+\begin{equation}
+    \bs{q}(\bs{d}-\bs{K}) = B(\bs{d}-\bs{K}) = B\bs{d} - \bs{q}(\bs{K}).
+    \label{eq:neg_k_shift}
+\end{equation}
+Since $B = 2\pi M^{-T}$ and $M = PD$, the shift vector is
+\begin{equation}
+    \bs{G} \;\equiv\; B\bs{d} \;=\; 2\pi M^{-T}\bs{d} \;=\; 2\pi P^{-T}\bs{1}\,,
+    \label{eq:Gshift}
+\end{equation}
+which is the sum of all three primitive reciprocal lattice vectors and is
+therefore itself a primitive reciprocal lattice vector.
+
+The structure factor~\eqref{eq:sfac_scalar} is \emph{not} in general invariant
+under $\bs{q}\to\bs{q}+\bs{G}$ for a multi-sublattice crystal.
+Shifting the wavevector by $\bs{G}$ multiplies each sublattice amplitude by
+the phase $e^{-i\bs{G}\cdot\bs{r}_\mu}$:
+\begin{equation}
+    S(\bs{q}+\bs{G})
+    = \left|\sum_\mu e^{-i\bs{G}\cdot\bs{r}_\mu}\,
+             e^{-i\bs{q}\cdot\bs{r}_\mu}\,\tilde{X}^{\raw}_\mu\right|^2.
+    \label{eq:Gshift_S}
+\end{equation}
+This equals $S(\bs{q})$ only when $e^{-i\bs{G}\cdot\bs{r}_\mu}$ takes the
+same value for every sublattice $\mu$, i.e.\ when $\bs{G}\cdot\bs{r}_\mu$
+differs between sublattices by at most $2\pi$.  For the pyrochlore structure
+with $Z=L\mathbf{I}$ the index cell is $M=L\,A_{\mathrm{pyro}}$,
+$\bs{d}=(L,L,L)^T$, and
+\[
+    \bs{G} = 2\pi A_{\mathrm{pyro}}^{-T}(1,1,1)^T\,.
+\]
+The four sublattice sites $\bs{r}_\mu \in \{(0,0,0),\,(0,2,2),\,(2,0,2),\,(2,2,0)\}$ give
+\[
+    \bs{G}\cdot\bs{r}_\mu \;=\; \bigl\{0,\,\pi,\,\pi,\,\pi\bigr\}\,,
+\]
+so three of the four amplitudes acquire a sign flip and
+$S(\bs{q}+\bs{G})\neq S(\bs{q})$ generically.
+
+Consequently, even though the DFT buffer value at $\texttt{flat\_from\_idx3\_wrapped}(k)$
+is the correct complex conjugate~\eqref{eq:conj}, \texttt{phase\_factors}
+applies the wrong weight matrix at that slot: $S(\texttt{flat\_from\_idx3\_wrapped}(k))$
+computes the structure factor at $-\bs{q}+\bs{G}$, not at $-\bs{q}$.
+
+\paragraph{Centering fix.}
+The remedy is to center $\bs{K}$ around zero when evaluating $\bs{q}(\bs{K})$
+in \texttt{phase\_factors}: for each component $j$, replace $K_j$ by
+$K_j - D_j$ whenever $K_j > D_j/2$.  Denote the result $\hat{\bs{K}}
+\in (-\bs{d}/2,\,\bs{d}/2]^3$.  Then
+\[
+    \bs{q}(\hat{\bs{K}}_{\texttt{flat\_from\_idx3\_wrapped}(Q)})
+    \;=\; B(-\bs{K}) \;=\; -\bs{q}(\hat{\bs{K}}_k)\,,
+\]
+and Friedel's law $S(\texttt{flat\_from\_idx3\_wrapped}(-Q)) = S(\texttt{flat\_from\_idx3\_wrapped}(Q))$ holds exactly for all
+real-valued fields and all lattice geometries.
+
+\section{Supercell identity}
 
 \paragraph{Setup.}
 By the self-consistency relation of Section~1, the same physical supercell admits two descriptions:
@@ -208,15 +303,14 @@ $B_2\bs{K}_2 = B_1\bs{K}_1$, giving
 \end{equation}
 In the common case that $R_1 = R_2 = I$ (e.g.\ when $WZ$ is diagonal),
 $M_1 = M_2$, and~\eqref{eq:kmap} reduces to the familiar $\bs{K}_2 = \bs{K}_1 \bmod \bs{d}_2$.
-However, when the SNF algorithm chooses a non-trivial $R_1 \neq I$ for one representation
-but not the other, $M_1 \neq M_2$, and the naive component-wise reduction is \emph{incorrect}.
+
 
 \paragraph{Backfolding identity.}
 With $\bs{K}_2$ determined by~\eqref{eq:kmap}, the two DFT outputs are related by
 \begin{equation}
-    \tilde{X}^{\mathrm{raw}}_1(\bs{K}_1)
+    \tilde{X}^{\raw}_1(\bs{K}_1)
     = \sum_{\mu} e^{-i\bs{q}(\bs{K}_1)\cdot \bs{r}_\mu}\;
-      \tilde{X}^{\mathrm{raw}}_{2,\mu}(\bs{K}_2)
+      \tilde{X}^{\raw}_{2,\mu}(\bs{K}_2)
     \label{eq:backfold}
 \end{equation}
 where $\{\bs{r}_\mu\}$ are the sublattice positions of Rep.\ 2 (the $|\det W|$ sites of $\mathcal{S}_W$
@@ -230,6 +324,20 @@ and the DFT phase of Rep.\ 2 at $\bs{K}_2$.
 Equation~\eqref{eq:backfold} implies that $S(\bs{K}_1)$ from Rep.\ 1
 equals $S(\bs{K}_2)$ from Rep.\ 2 (computed via~\eqref{eq:sfac} with the appropriate sublattice weights),
 so physical observables are independent of the choice of primitive cell.
+
+\paragraph{Nyquist aliasing (even $D_j$).}
+When $D_j$ is even the component $K_j = D_j/2$ is a fixed point of
+\texttt{flat\_neg}: $D_j - D_j/2 = D_j/2$, so \texttt{flat\_neg}$(k)=k$.
+The two extended-zone representatives $\hat{K}_j = \pm D_j/2$
+correspond to distinct wavevectors $\bs{q} = B(\cdots,\pm D_j/2,\cdots)$
+differing by the primitive reciprocal lattice vector $\bs{G}_j = B D_j \hat{\bs{e}}_j$.
+As shown above, $S(\bs{q}+\bs{G}_j)\neq S(\bs{q})$ for multi-sublattice
+crystals, so the sublattice-resolved structure factor at such a Nyquist point
+is \emph{not uniquely defined by the BZ point alone}: its value depends on
+which extended-zone representative is chosen.  The centering convention
+($K_j > D_j/2$ wraps to $K_j - D_j$, so $K_j = D_j/2$ keeps its positive
+representative) makes a definite but arbitrary choice.
+
 
 
 \end{document}

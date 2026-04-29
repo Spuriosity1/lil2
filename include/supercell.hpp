@@ -152,6 +152,66 @@ public:
              dmat33_t::from_other(wrap_to_index_cell.inv_latvecs_times_det.tr());
     }
 
+    // returns the 0-centred double-valued q vector associated with Q
+    inline vector3::vec3<double> wavevector_from_idx3(const idx3_t& Q) const {
+        idx3_t K = Q;
+        for (int a=0; a<3; a++){
+            if (K[a] > size(a)/2) K[a] -= size(a);
+        }
+        return get_reciprocal_lattice_vectors() * K;
+    }
+
+    bool is_Nyquist_aliased(const idx3_t& Q) const {
+        for (int a=0; a<3; a++){
+            if (size(a) % 2 == 0 && Q[a] == size(a) / 2) return true;
+        }
+        return false;
+    }
+
+    bool is_Nyquist_aliased(const idx_t flat) const {
+        auto Q = idx3_from_flat(flat);
+        for (int a=0; a<3; a++){
+            if (size(a) % 2 == 0 && Q[a] == size(a) / 2) return true;
+        }
+        return false;
+    }
+
+     auto enumerate_cell_index() const {
+         struct CellIndexIterator {
+             const LatticeIndexing* lat;
+
+             struct Iterator {
+                 idx_t current;
+                 idx_t total;
+                 const LatticeIndexing* lat;
+
+                 idx3_t operator*() const {
+                     return lat->idx3_from_flat(current);
+                 }
+                 
+                 Iterator& operator++() {
+                     ++current;
+                     return *this;
+                 }
+
+                bool operator!=(const Iterator& other) const {
+                    return current != other.current;
+                }
+            };
+            
+            Iterator begin() {
+                return {0, lat->num_primitive_cells(), lat};
+            }
+            
+            Iterator end() {
+                idx_t total = lat->num_primitive_cells();
+                return {total, total, lat};
+            }
+        
+         };
+         return CellIndexIterator(this);
+     }
+
 };
 
 
@@ -296,6 +356,11 @@ struct Supercell {
         return std::get<std::vector<T>>(objects);
     }
 
+    template<typename T>
+    auto num_sl() {
+        return std::get<SlPos<T>>(sl_positions).size();
+    }
+
 
     // Lookup by position (integer coordinates)
     // note deliberate ipos copy
@@ -371,41 +436,6 @@ struct Supercell {
         return CellIterator{this};
      }
 
-     auto enumerate_cell_index() const {
-         struct CellIndexIterator {
-             const LatticeIndexing* lat;
-
-             struct Iterator {
-                 idx_t current;
-                 idx_t total;
-                 const LatticeIndexing* lat;
-
-                 idx3_t operator*() const {
-                     return lat->idx3_from_flat(current);
-                 }
-                 
-                 Iterator& operator++() {
-                     ++current;
-                     return *this;
-                 }
-
-                bool operator!=(const Iterator& other) const {
-                    return current != other.current;
-                }
-            };
-            
-            Iterator begin() {
-                return {0, lat->num_primitive_cells(), lat};
-            }
-            
-            Iterator end() {
-                idx_t total = lat->num_primitive_cells();
-                return {total, total, lat};
-            }
-        
-         };
-         return CellIndexIterator(&lattice);
-     }
 };
 
 

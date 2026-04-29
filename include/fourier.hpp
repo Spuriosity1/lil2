@@ -151,27 +151,36 @@ struct SublatWeightMatrix {
     // so conj(Ã_μ)·Ã_ν = conj(Ã_μ^raw)·Ã_ν^raw · exp(+i q·(r_μ−r_ν)).
     static SublatWeightMatrix phase_factors(
             const LatticeIndexing& lat,
-            const std::vector<ipos_t>& sl_positions) {
+            const std::vector<ipos_t>& sl_positions
+            ) {
         const int num_sl = static_cast<int>(sl_positions.size());
         SublatWeightMatrix w(num_sl, lat.size());
-        const auto B = lat.get_reciprocal_lattice_vectors();
-        idx3_t Q;
-        for (Q[0] = 0; Q[0] < lat.size(0); Q[0]++)
-            for (Q[1] = 0; Q[1] < lat.size(1); Q[1]++)
-                for (Q[2] = 0; Q[2] < lat.size(2); Q[2]++) {
-                    const int k = lat.flat_from_idx3(Q);
-                    const auto q = B * vector3::vec3<double>(Q);
-                    for (int mu = 0; mu < num_sl; ++mu)
-                        for (int nu = 0; nu < num_sl; ++nu) {
-                            const double arg = dot(q, vector3::vec3<double>(
-                                    sl_positions[mu] - sl_positions[nu]));
-                            w(mu, nu)[k] = std::polar(1.0, arg);
-                        }
+
+        for (const auto& Q : lat.enumerate_cell_index() ){
+            const int k_flat = lat.flat_from_idx3(Q);
+            const auto q = lat.wavevector_from_idx3(Q);
+
+            // Important subtlety:generally expect S(q) = S(-q) for any 
+            // real-valued transform. However, incautious DFT'ing centers
+            // the result on Q = floor(D/2), not zero -- since sublattice deltas
+            // give a phase even when dotted with a reciprocal lattice vector, 
+            // this makes a difference.
+
+            for (int mu = 0; mu < num_sl; ++mu) {
+                for (int nu = 0; nu < num_sl; ++nu) {
+                    const double arg = dot(q, vector3::vec3<double>(
+                            sl_positions[mu] - sl_positions[nu]));
+                    // == cos(arg) + i sin(arg)
+                    w(mu, nu)[k_flat] = std::polar(1.0, arg);
                 }
+            }
+        }
+    
         return w;
     }
 
     // q-independent real weights: w(μ,ν)[k] = w_mn[mu][nu] for all k.
+    // Does not account for sublattice offsets
     static SublatWeightMatrix constant(
             int num_sl, ivec3_t k_dims,
             const std::vector<std::vector<double>>& w_mn) {
@@ -182,6 +191,16 @@ struct SublatWeightMatrix {
             for (int nu = 0; nu < num_sl; ++nu)
                 std::fill(w(mu, nu).begin(), w(mu, nu).end(),
                           std::complex<double>(w_mn[mu][nu], 0.0));
+        }
+        return w;
+    }
+
+    static SublatWeightMatrix constant(int num_sl, ivec3_t k_dims, double c) {
+        SublatWeightMatrix w(num_sl, k_dims);
+        for (int mu = 0; mu < num_sl; ++mu) {
+            for (int nu = 0; nu < num_sl; ++nu)
+                std::fill(w(mu, nu).begin(), w(mu, nu).end(),
+                        std::complex<double>(c, 0.0));
         }
         return w;
     }

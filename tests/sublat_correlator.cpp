@@ -5,28 +5,7 @@
 #include <cmath>
 #include <complex>
 #include <iostream>
-
-
-// ---- minimal test harness --------------------------------------------------
-static int g_failed = 0;
-
-static void check(bool cond, const char* msg) {
-    if (!cond) {
-        std::cerr << "FAIL: " << msg << "\n";
-        ++g_failed;
-    } else {
-        std::cout << "PASS: " << msg << "\n";
-    }
-}
-
-static void check(unsigned success, unsigned tried, const char* msg){
-    std::string s;
-    s += std::to_string(success) + "/" + std::to_string(tried);
-    s += " ";
-    s += msg;
-    check(success == tried, s.c_str());
-}
-
+#include <gtest/gtest.h>
 
 // Verify correlate(buf, buf)(mu, nu)[k] == conj(buf[mu][k]) * buf[nu][k]
 // for every mu, nu, k.
@@ -34,7 +13,6 @@ void test_correlate_elementwise() {
     auto Z = imat33_t::from_cols({4,0,0}, {0,4,0}, {0,0,4});
     auto sc = build_supercell<Spin>(build_pyro_cell(), Z);
 
-    // Non-trivial spin pattern
     int flat = 0;
     for (auto& s : sc.get_objects<Spin>())
         s.Sz = std::sin(2.0 * M_PI * (flat++) / sc.get_objects<Spin>().size());
@@ -59,12 +37,10 @@ void test_correlate_elementwise() {
                     ok = false;
                 }
             }
-    check(ok, "correlate: result(mu,nu)[k] == conj(buf[mu][k]) * buf[nu][k]");
+    EXPECT_TRUE(ok) << "correlate: result(mu,nu)[k] == conj(buf[mu][k]) * buf[nu][k]";
 }
 
-
-// Verify that phase_factors weights satisfy the Hermitian symmetry
-// w(mu,nu)[k] == conj(w(nu,mu)[k]).
+// Verify that phase_factors weights satisfy Hermitian symmetry w(mu,nu)[k] == conj(w(nu,mu)[k]).
 void test_phase_factors_selfadjoint() {
     auto Z = imat33_t::from_cols({4,0,0}, {0,4,0}, {0,0,4});
     auto sc = build_supercell<Spin>(build_pyro_cell(), Z);
@@ -86,29 +62,11 @@ void test_phase_factors_selfadjoint() {
                     ok = false;
                 }
             }
-    check(ok, "phase_factors: w(mu,nu)[k] == conj(w(nu,mu)[k])");
+    EXPECT_TRUE(ok) << "phase_factors: w(mu,nu)[k] == conj(w(nu,mu)[k])";
 }
 
-
-// Structure factor backfolding test.
-//
-// Two equivalent representations of the same physical system:
-//   sc1: 1-sublattice, primitive cell A, supercell W * Z  (det(W Z) sites)
-//   sc2: det(W)-sublattice, primitive cell W A, supercell Z (same sites)
-//
-// After loading the same spin pattern into both:
-//   ph1.contract(correlate(buf1,buf1))[K1]
-//     == ph2.contract(correlate(buf2,buf2))[K2]
-// where K1 and K2 label the same physical wavevector, related by (doc/indexing.tex eq. 5):
-//   K1 = M1^T M2^{-T} K2  =  (1/2π) M1^T B2 K2   (mod d1, component-wise)
-// This reduces to K1 = K2 mod d1 only when both SNF rotations R1=R2=I.
-//
-// Single-sublattice sanity for sc1 (phase trivially 1):
-//   ph1.contract(correlate(buf1,buf1))[k] == |buf1[0][k]|²
 void test_structure_factor(imat33_t Z, imat33_t W) {
     std::cerr<<"test_structure_factor Z="<<Z<<" W="<<W<<std::endl;
-    // Use a simple cubic primitive cell (not pyrochlore) so the positions
-    // are easy to reason about.
     auto A = imat33_t::from_cols({8,0,0}, {0,8,0}, {0,0,8});
     MyCell cell1(A);
     cell1.add<Spin>(Spin({0,0,0}));
@@ -131,12 +89,10 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
     if (spins1.size() != spins2.size())
         throw std::runtime_error("spin count mismatch");
 
-    // Non-trivial pattern on sc1
     for (int i = 0; i < np1; ++i)
         spins1[i].Sz = std::sin(2.0 * M_PI * i / np1)
                      + 0.3 * std::cos(2.0 * M_PI * 3 * i / np1);
 
-    // Copy to sc2 by physical position
     for (int mu = 0; mu < num_sl; ++mu)
         for (int i = 0; i < np2; ++i) {
             const ipos_t pos = spins2[mu * np2 + i].ipos;
@@ -163,7 +119,6 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
     auto S1 = ph1.contract(correlate<Spin>(buf1, buf1));
     auto S2 = ph2.contract(correlate<Spin>(buf2, buf2));
 
-    // K-mapping from doc/indexing.tex eq. (5): K1 = (1/2π) M1^T B2 K2
     const auto M1d = dmat33_t::from_other(sc1.lattice.get_lattice_vectors());
     const auto B2  = sc2.lattice.get_reciprocal_lattice_vectors();
     const auto T12 = (1.0 / (2.0 * M_PI)) * M1d.tr() * B2;
@@ -188,8 +143,6 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
             ok_cross = false;
         }
 
-        // For sc1 (single sublattice), phase factor is trivially 1,
-        // so S1[k] must equal |Ã(k)|²
         const double mag2 = std::norm(buf1[0][f1]);
         if (std::abs(S1[f1] - mag2) > tol) {
             std::cerr << "  self-product mismatch at K=("
@@ -199,13 +152,11 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
         }
     }
 
-    check(ok_cross, "new API: S1(K) == S2(K) over sc2 BZ");
-    check(ok_self,  "new API: 1-sl S(K) == |A(K)|²");
+    EXPECT_TRUE(ok_cross) << "new API: S1(K) == S2(K) over sc2 BZ";
+    EXPECT_TRUE(ok_self)  << "new API: 1-sl S(K) == |A(K)|²";
 }
 
-
-// Verify that SublatWeightMatrix::constant() with uniform unit weights
-// gives the same result as summing |Ã_mu(k)|² directly.
+// Verify SublatWeightMatrix::constant() with uniform unit weights matches Σ|Ã_mu|² directly.
 void test_constant_weights_uniform() {
     auto Z = imat33_t::from_cols({4,0,0}, {0,4,0}, {0,0,4});
     auto sc = build_supercell<Spin>(build_pyro_cell(), Z);
@@ -221,7 +172,6 @@ void test_constant_weights_uniform() {
     ft.transform();
     const auto& buf = ft.get_buffer();
 
-    // Unit weight matrix
     std::vector<std::vector<double>> w_unit(num_sl, std::vector<double>(num_sl, 1.0));
     auto cw = SublatWeightMatrix::constant(num_sl, buf.k_dims, w_unit);
     auto result = cw.contract(correlate<Spin>(buf, buf));
@@ -238,13 +188,9 @@ void test_constant_weights_uniform() {
             ok = false;
         }
     }
-    check(ok, "constant weights: unit matrix contracts to Σ_{μν} conj(Ã_μ)·Ã_ν");
+    EXPECT_TRUE(ok) << "constant weights: unit matrix contracts to Σ_{μν} conj(Ã_μ)·Ã_ν";
 }
 
-
-// ---- helpers ---------------------------------------------------------------
-
-// F(K) = Σ_μ exp(+i q_K · r_μ),  q_K = B · K
 static std::complex<double> form_factor(
         const LatticeIndexing& lat,
         const std::vector<ipos_t>& sl_pos,
@@ -258,22 +204,6 @@ static std::complex<double> form_factor(
     return F;
 }
 
-// Wrap K component-wise into [0, D)
-static int flat_neg(const LatticeIndexing& lat, ivec3_t K) {
-    const auto D = lat.size();
-    ivec3_t mK;
-    for (int j = 0; j < 3; ++j)
-        mK[j] = (K[j] == 0) ? 0 : D[j] - K[j];
-    return lat.flat_from_idx3(mK);
-}
-
-// ---- new tests -------------------------------------------------------------
-
-// For a real-valued spin field the structure factor must be
-//   (a) real:               Im S(k) == 0
-//   (b) inversion-symmetric: S(k) == S(-k)
-// Both are exact algebraic identities; non-trivial multi-wave pattern exercises
-// many k-points simultaneously.
 void test_structure_factor_real_and_inversion(int L) {
     auto sc = build_supercell<Spin>(build_pyro_cell(),
         imat33_t::from_cols({L,0,0}, {0,L,0}, {0,0,L}));
@@ -307,24 +237,19 @@ void test_structure_factor_real_and_inversion(int L) {
         if (std::abs(Sv[f].imag()) > tol) {
             std::cerr << "  S(k) not real at K=" << K
                       << ": Im=" << Sv[f].imag() << "\n";
-            ok_real--;  
+            ok_real--;
         }
-        const int fm = flat_neg(sc.lattice, K);
+        const int fm = sc.lattice.flat_from_idx3_wrapped(K);
         if (std::abs(Sv[f] - Sv[fm]) > tol) {
-            std::cerr << "  S(k)!=S(-k) at :=" << K
+            std::cerr << "  S(k)!=S(-k) at K=" << K
                       << ": S=" << Sv[f] << " S(-k)=" << Sv[fm] << "\n";
             ok_inv--;
         }
     }
-    check(ok_real, np, "S(k) real: Im(S(k)) == 0 for all k");
-    check(ok_inv,  np, "S(k) inversion: S(k) == S(-k) for all k");
+    EXPECT_EQ(ok_real, (unsigned)np) << "S(k) real: Im(S(k)) == 0 for all k";
+    EXPECT_EQ(ok_inv,  (unsigned)np) << "S(k) inversion: S(k) == S(-k) for all k";
 }
 
-
-// For Sz(I,μ) = cos(2π Q·I/D) (sublattice-independent cosine):
-//   • DFT peaks at ±Q with magnitude N/2 (or N at Nyquist) per sublattice
-//   • S(Q) = peak² · |F(Q)|²  where F = Σ_μ exp(+i q·r_μ)
-//   • S(Q) = S(-Q)
 void test_plane_wave_pyrochlore(int L, ivec3_t Q) {
     auto sc = build_supercell<Spin>(build_pyro_cell(),
         imat33_t::from_cols({L,0,0}, {0,L,0}, {0,0,L}));
@@ -377,7 +302,7 @@ void test_plane_wave_pyrochlore(int L, ivec3_t Q) {
             }
         }
     }
-    check(ok_peaks, "plane wave pyrochlore: DFT peaks at ±Q, zero elsewhere");
+    EXPECT_TRUE(ok_peaks) << "plane wave pyrochlore: DFT peaks at ±Q, zero elsewhere";
 
     const auto& sl_pos = std::get<SlPos<Spin>>(sc.sl_positions);
     std::vector<ipos_t> sl_vec(sl_pos.begin(), sl_pos.end());
@@ -391,19 +316,14 @@ void test_plane_wave_pyrochlore(int L, ivec3_t Q) {
     bool ok_val = std::abs(Sv[k_pos].real() - S_expect) < tol_sf;
     if (!ok_val)
         std::cerr << "  S(Q) got=" << Sv[k_pos].real() << " expected=" << S_expect << "\n";
-    check(ok_val, "plane wave pyrochlore: S(Q) == peak^2 * |F(Q)|^2");
+    EXPECT_TRUE(ok_val) << "plane wave pyrochlore: S(Q) == peak^2 * |F(Q)|^2";
 
     bool ok_inv = std::abs(Sv[k_pos] - Sv[k_neg]) < tol_sf;
     if (!ok_inv)
         std::cerr << "  S(Q)=" << Sv[k_pos] << " S(-Q)=" << Sv[k_neg] << "\n";
-    check(ok_inv, "plane wave pyrochlore: S(Q) == S(-Q)");
+    EXPECT_TRUE(ok_inv) << "plane wave pyrochlore: S(Q) == S(-Q)";
 }
 
-
-// Sz(I,μ) = A[μ] · cos(2π Q·I/D).  Each sublattice has a different amplitude.
-// Expected: S(Q) = (N/2)² · |Σ_μ A[μ] exp(+i q·r_μ)|²
-// This specifically probes whether sublattice phase factors are applied with
-// the correct sign and sublattice indexing.
 void test_sublattice_amplitude_plane_wave(int L, ivec3_t Q, std::array<double,4> A) {
     auto sc = build_supercell<Spin>(build_pyro_cell(),
         imat33_t::from_cols({L,0,0}, {0,L,0}, {0,0,L}));
@@ -456,12 +376,9 @@ void test_sublattice_amplitude_plane_wave(int L, ivec3_t Q, std::array<double,4>
         std::cerr << "  sublat amp: S(Q)=" << Sv[k_pos].real()
                   << " expected=" << S_expect
                   << " A=" << A[0] << "," << A[1] << "," << A[2] << "," << A[3] << "\n";
-    check(ok, "sublat amplitude plane wave: S(Q) == hN^2 * |Σ A_mu exp(+i q·r_mu)|^2");
+    EXPECT_TRUE(ok) << "sublat amplitude plane wave: S(Q) == hN^2 * |Σ A_mu exp(+i q·r_mu)|^2";
 }
 
-
-// Superposition of several plane waves with per-sublattice amplitudes.
-// Checks S(k) = S(-k) and S(k) >= 0 for every k in the full BZ.
 void test_random_superposition_inversion(int L) {
     auto sc = build_supercell<Spin>(build_pyro_cell(),
         imat33_t::from_cols({L,0,0}, {0,L,0}, {0,0,L}));
@@ -508,12 +425,12 @@ void test_random_superposition_inversion(int L) {
 
     for (int f = 0; f < np; ++f) {
         const auto K  = sc.lattice.idx3_from_flat(f);
-        const int  fm = flat_neg(sc.lattice, K);
+        const int  fm = sc.lattice.flat_from_idx3_wrapped(K);
 
         if (std::abs(Sv[f] - Sv[fm]) > tol) {
             std::cerr << "  superposition S(k)!=S(-k) at K=" << K
                       << ": " << Sv[f] << " vs " << Sv[fm] << "\n";
-            ok_inv--;  
+            ok_inv--;
         }
         if (Sv[f].real() < -tol) {
             std::cerr << "  superposition S(k)<0 at flat=" << f
@@ -521,53 +438,54 @@ void test_random_superposition_inversion(int L) {
             ok_pos--;
         }
     }
-    check(ok_inv, np,    "superposition: S(k) == S(-k) for all k");
-    check(ok_pos, np, "superposition: S(k) >= 0 for all k");
+    EXPECT_EQ(ok_inv, (unsigned)np) << "superposition: S(k) == S(-k) for all k";
+    EXPECT_EQ(ok_pos, (unsigned)np) << "superposition: S(k) >= 0 for all k";
 }
-
 
 // ---------------------------------------------------------------------------
 
-int main() {
-    test_correlate_elementwise();
-    test_phase_factors_selfadjoint();
+TEST(SublatCorrelator, CorrelateElementwise)     { test_correlate_elementwise(); }
+TEST(SublatCorrelator, PhaseFactorsSelfAdjoint)  { test_phase_factors_selfadjoint(); }
 
-    // checks correct handling of structurefactor in easy cases
+TEST(SublatCorrelator, StructureFactor_diag_Z_W0) {
     auto Z = imat33_t::from_cols({8,0,0}, {0,8,0}, {0,0,8});
     test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {0,1,0}, {0,0,1}));
-    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {0,2,0}, {0,0,1}));
-
-    // test with weirdly shaped subcell
-    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {-1,1,-1}, {0,2,1}));
-    test_structure_factor(Z, imat33_t::from_cols({-1,1,1}, {1,-1,1}, {1,1,-1}));
-
-    // test with weirdly shaped supercell
-    Z = imat33_t::from_cols({-2,-2,3}, {2,-2,0}, {1,2,3});
-    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {0,1,0}, {0,0,1}));
-    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {0,2,0}, {0,0,1}));
-
-
-    test_constant_weights_uniform();
-
-
-    // Symmetry and plane-wave structure factor tests
-    test_structure_factor_real_and_inversion(6);
-
-    test_plane_wave_pyrochlore(8, {1, 0, 0});
-    test_plane_wave_pyrochlore(8, {1, 1, 0});
-    test_plane_wave_pyrochlore(8, {1, 1, 1});
-    test_plane_wave_pyrochlore(8, {2, 1, 0});
-
-    test_sublattice_amplitude_plane_wave(8, {1, 0, 0}, {1.0,  1.0,  1.0,  1.0});
-    test_sublattice_amplitude_plane_wave(8, {1, 0, 0}, {1.0, -1.0,  0.5, -0.5});
-    test_sublattice_amplitude_plane_wave(8, {1, 1, 1}, {1.0, -1.0,  0.5, -0.5});
-
-    test_random_superposition_inversion(6);
-
-    if (g_failed == 0)
-        std::cout << "All tests passed.\n";
-    else
-        std::cerr << g_failed << " test(s) failed.\n";
-
-    return g_failed > 0 ? 1 : 0;
 }
+TEST(SublatCorrelator, StructureFactor_diag_Z_W1) {
+    auto Z = imat33_t::from_cols({8,0,0}, {0,8,0}, {0,0,8});
+    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {0,2,0}, {0,0,1}));
+}
+TEST(SublatCorrelator, StructureFactor_weird_subcell_A) {
+    auto Z = imat33_t::from_cols({8,0,0}, {0,8,0}, {0,0,8});
+    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {-1,1,-1}, {0,2,1}));
+}
+TEST(SublatCorrelator, StructureFactor_weird_subcell_B) {
+    auto Z = imat33_t::from_cols({8,0,0}, {0,8,0}, {0,0,8});
+    test_structure_factor(Z, imat33_t::from_cols({-1,1,1}, {1,-1,1}, {1,1,-1}));
+}
+TEST(SublatCorrelator, StructureFactor_weird_supercell_A) {
+    auto Z = imat33_t::from_cols({-2,-2,3}, {2,-2,0}, {1,2,3});
+    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {0,1,0}, {0,0,1}));
+}
+TEST(SublatCorrelator, StructureFactor_weird_supercell_B) {
+    auto Z = imat33_t::from_cols({-2,-2,3}, {2,-2,0}, {1,2,3});
+    test_structure_factor(Z, imat33_t::from_cols({2,0,0}, {0,2,0}, {0,0,1}));
+}
+TEST(SublatCorrelator, ConstantWeightsUniform)        { test_constant_weights_uniform(); }
+TEST(SublatCorrelator, StructureFactorRealAndInversion) { test_structure_factor_real_and_inversion(6); }
+
+TEST(SublatCorrelator, PlaneWavePyrochlore_1_0_0) { test_plane_wave_pyrochlore(8, {1, 0, 0}); }
+TEST(SublatCorrelator, PlaneWavePyrochlore_1_1_0) { test_plane_wave_pyrochlore(8, {1, 1, 0}); }
+TEST(SublatCorrelator, PlaneWavePyrochlore_1_1_1) { test_plane_wave_pyrochlore(8, {1, 1, 1}); }
+TEST(SublatCorrelator, PlaneWavePyrochlore_2_1_0) { test_plane_wave_pyrochlore(8, {2, 1, 0}); }
+
+TEST(SublatCorrelator, SublatAmplitudePlaneWave_uniform) {
+    test_sublattice_amplitude_plane_wave(8, {1, 0, 0}, {1.0,  1.0,  1.0,  1.0});
+}
+TEST(SublatCorrelator, SublatAmplitudePlaneWave_mixed) {
+    test_sublattice_amplitude_plane_wave(8, {1, 0, 0}, {1.0, -1.0,  0.5, -0.5});
+}
+TEST(SublatCorrelator, SublatAmplitudePlaneWave_mixed_diag) {
+    test_sublattice_amplitude_plane_wave(8, {1, 1, 1}, {1.0, -1.0,  0.5, -0.5});
+}
+TEST(SublatCorrelator, RandomSuperpositionInversion) { test_random_superposition_inversion(6); }
