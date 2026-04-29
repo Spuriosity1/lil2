@@ -61,9 +61,10 @@ void test_plane_wave(const imat33_t& Z, const ivec3_t& Q) {
 
     EXPECT_TRUE(std::abs(std::abs(buf[0][k_pos]) - peak_expected) < tol)
         << "plane wave: peak at +Q wrong";
-    if (!aliased)
+    if (!aliased){
         EXPECT_TRUE(std::abs(std::abs(buf[0][k_neg]) - peak_expected) < tol)
             << "plane wave: peak at -Q wrong";
+    }
 
     bool all_zero = true;
     for (int i = 0; i < N; ++i) {
@@ -323,13 +324,22 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
 
     for (int f2 = 0; f2 < np2; ++f2) {
         const auto K2 = sc2.lattice.idx3_from_flat(f2);
-        auto K1 = M1.tr() * M2_inv_tr * K2;
+
+        // subtlety: K2 is non-centred. Center it first
+        idx3_t K2c = K2;
+        const auto D2 = sc2.lattice.size();
+        for (int a = 0; a < 3; ++a)
+            if (K2c[a] > static_cast<int64_t>(D2[a]) / 2)
+                K2c[a] -= static_cast<int64_t>(D2[a]);
+
+        auto K1 = M1.tr() * M2_inv_tr * K2c;
         for (int i = 0; i < 3; ++i) {
             assert(K1[i] % det_M2 == 0);
             K1[i] /= det_M2;
             K1[i] = mod<int64_t>(K1[i], sc1.lattice.size(i));
         }
-        const int f1 = sc1.lattice.flat_from_idx3(K1);
+
+        const int f1 = sc1.lattice.flat_from_idx3_wrapped(K1);
 
         if (std::abs(S1v[f1] - S2v[f2]) > tol) {
             std::cerr << "  structure factor mismatch at K2=" << K2

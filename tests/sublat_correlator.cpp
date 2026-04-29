@@ -128,9 +128,17 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
     bool ok_cross = true;
     bool ok_self  = true;
 
+    const auto D2  = sc2.lattice.size();
     for (int f2 = 0; f2 < np2; ++f2) {
         const auto K2  = sc2.lattice.idx3_from_flat(f2);
-        const auto K1_d = T12 * vec3<double>(K2);
+        // Centre K2 in sc2's BZ before mapping so that T12 maps the
+        // physical (centred) wavevector into sc1's index space, matching
+        // the convention used by phase_factors on both sides.
+        idx3_t K2c = K2;
+        for (int j = 0; j < 3; ++j)
+            if (K2c[j] > static_cast<int64_t>(D2[j]) / 2)
+                K2c[j] -= static_cast<int64_t>(D2[j]);
+        const auto K1_d = T12 * vec3<double>(K2c);
         ivec3_t K1;
         for (int j = 0; j < 3; ++j)
             K1[j] = ((int64_t)std::llround(K1_d[j]) % D1[j] + D1[j]) % D1[j];

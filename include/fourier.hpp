@@ -466,21 +466,21 @@ public:
 
     // Sublattice phase weight matrix for this plane.
     // w(μ,ν)[k] = exp(+i q_k · (r_μ − r_ν))  where  q_k = B·K(n1,n2).
+    // and K has been wrapped to the 0-centered cell.
     // Flat index k = n1*N2 + n2.
     SublatWeightMatrix make_phase_weights(
             const std::vector<ipos_t>& sl_positions) const {
         const int num_sl = static_cast<int>(sl_positions.size());
         const int N1 = spec.N1, N2 = spec.N2;
         SublatWeightMatrix w(num_sl, {N1, N2, 1});
-        const auto B = sc->lattice.get_reciprocal_lattice_vectors();
 
         for (int n1 = 0; n1 < N1; ++n1)
             for (int n2 = 0; n2 < N2; ++n2) {
                 const int k_flat = n1 * N2 + n2;
-                const auto q = B * vector3::vec3<double>(
+                const auto q = sc->lattice.wavevector_from_idx3({
                     spec.e1[0]*n1 + spec.e2[0]*n2,
                     spec.e1[1]*n1 + spec.e2[1]*n2,
-                    spec.e1[2]*n1 + spec.e2[2]*n2);
+                    spec.e1[2]*n1 + spec.e2[2]*n2});
                 for (int mu = 0; mu < num_sl; ++mu)
                     for (int nu = 0; nu < num_sl; ++nu) {
                         const double arg = dot(q, vector3::vec3<double>(

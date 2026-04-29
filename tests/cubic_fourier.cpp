@@ -81,9 +81,10 @@ void test_plane_wave(int l, ivec3_t Q) {
 
     EXPECT_TRUE(std::abs(std::abs(buf[0][k_pos]) - peak_expected) < tol)
         << "plane wave: peak at +Q wrong";
-    if (!aliased)
+    if (!aliased){
         EXPECT_TRUE(std::abs(std::abs(buf[0][k_neg]) - peak_expected) < tol)
             << "plane wave: peak at -Q wrong";
+    }
 
     bool all_zero = true;
     for (int i = 0; i < N; ++i) {
@@ -250,12 +251,36 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
     auto S2v = ph2.contract(correlate<Spin>(buf2, buf2));
 
     const double tol = 1e-6 * np1 * np1;
+
+
+    auto M1 = sc1.lattice.get_lattice_vectors();
+    auto M2 = sc2.lattice.get_lattice_vectors();
+    auto M2_inv_tr = unnormed_inverse(M2).tr();
+    auto det_M2 = det(M2);
+
     bool ok_cross = true;
     bool ok_self  = true;
 
     for (int f2 = 0; f2 < np2 && (ok_cross || ok_self); ++f2) {
         const auto K2 = sc2.lattice.idx3_from_flat(f2);
-        const int f1 = sc1.lattice.flat_from_idx3_wrapped(K2);
+        // Map the physical (centred) wavevector of K2 into sc1's index space.
+        // Using raw K2 would be wrong: the same raw index in two lattices with
+        // different D can correspond to different physical wavevectors once the
+        // BZ-centring shift is applied.
+        idx3_t K2c = K2;
+        const auto D2 = sc2.lattice.size();
+        for (int a = 0; a < 3; ++a)
+            if (K2c[a] > static_cast<int64_t>(D2[a]) / 2)
+                K2c[a] -= static_cast<int64_t>(D2[a]);
+        
+        auto K1 = M1.tr() * M2_inv_tr * K2c;
+        for (int i = 0; i < 3; ++i) {
+            assert(K1[i] % det_M2 == 0);
+            K1[i] /= det_M2;
+            K1[i] = mod<int64_t>(K1[i], sc1.lattice.size(i));
+        }
+
+        const int f1 = sc1.lattice.flat_from_idx3_wrapped(K1);
 
         if (std::abs(S1v[f1] - S2v[f2]) > tol && !sc2.lattice.is_Nyquist_aliased(f2)) {
             const auto K1=sc1.lattice.idx3_from_flat(f1);
