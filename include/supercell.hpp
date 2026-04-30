@@ -178,6 +178,8 @@ public:
 
      auto enumerate_cell_index() const {
          struct CellIndexIterator {
+             CellIndexIterator(const LatticeIndexing* lat_) : lat(lat_){}
+
              const LatticeIndexing* lat;
 
              struct Iterator {
