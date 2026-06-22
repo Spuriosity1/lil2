@@ -127,6 +127,9 @@ struct vec3 {
 
 	friend vec3<T> mat33<T>::operator*(const vec3<T>&) const;
 
+    T* data() { return m_x; }
+    const T* data() const { return m_x; }
+
 protected:
 
     T m_x[3]={0,0,0};

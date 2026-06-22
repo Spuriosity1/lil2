@@ -303,9 +303,58 @@ void test_structure_factor(imat33_t Z, imat33_t W) {
     EXPECT_TRUE(ok_self)  << "structure factor: primitive S(K) == |A(K)|²";
 }
 
+// point_at(): repoint a transform at a different Supercell with no data copy.
+// Set up a Neel AFM state (staggered along x, Q=(L/2,0,0)) on one cell and a
+// FM state on another, then check that point_at() actually switches which
+// lattice is read: Neel peaks at k=(pi,0,0), FM peaks at k=0.
+void test_swap_lattice(int l) {
+    auto sc_neel = build_simple_cubic(l);
+    set_cosine_wave(sc_neel, {l / 2, 0, 0});
+
+    auto sc_fm = build_simple_cubic(l);
+    for (auto& s : sc_fm.get_objects<Spin>()) s.Sz = 1.0;
+
+    auto ft = make_fourier_transform<Spin, &Spin::Sz>(sc_neel);
+    ft.transform();
+
+    auto D = sc_neel.lattice.size();
+    auto kidx = [&](ivec3_t K) -> int {
+        for (int a = 0; a < 3; ++a)
+            K[a] = ((K[a] % D[a]) + D[a]) % D[a];
+        return static_cast<int>((K[0] * D[1] + K[1]) * D[2] + K[2]);
+    };
+    const int k0 = kidx({0, 0, 0});
+    const int kpi = kidx({l / 2, 0, 0});
+    const int N = l * l * l;
+    const double tol = 1e-9 * N * N;
+
+    {
+        auto& buf = ft.get_buffer();
+        const double S0 = std::norm(buf[0][k0]);
+        const double Spi = std::norm(buf[0][kpi]);
+        EXPECT_TRUE(Spi > S0 + tol)
+            << "Neel state: expected Bragg peak at k=(pi,0,0), got S(0,0,0)="
+            << S0 << " S(pi,0,0)=" << Spi;
+    }
+
+    ft.point_at(sc_fm);
+    ft.transform();
+
+    {
+        auto& buf = ft.get_buffer();
+        const double S0 = std::norm(buf[0][k0]);
+        const double Spi = std::norm(buf[0][kpi]);
+        EXPECT_TRUE(S0 > Spi + tol)
+            << "FM state after point_at(): expected Bragg peak at k=0, got S(0,0,0)="
+            << S0 << " S(pi,0,0)=" << Spi;
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 TEST(CubicFourier, UniformSimple)         { test_uniform_simple(L); }
+
+TEST(CubicFourier, SwapLattice)           { test_swap_lattice(L); }
 
 TEST(CubicFourier, PlaneWave_1_0_0)       { test_plane_wave(L, {1, 0, 0}); }
 TEST(CubicFourier, PlaneWave_0_2_0)       { test_plane_wave(L, {0, 2, 0}); }

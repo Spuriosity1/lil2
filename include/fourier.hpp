@@ -1,6 +1,7 @@
 #pragma once
 
 #include "supercell.hpp"
+#include <algorithm>
 #include <complex>
 #include <numeric>
 #include <type_traits>
@@ -288,6 +289,24 @@ public:
             fftw_free(rs_data[sl]);
             fftw_free(ks_data[sl]);
         }
+    }
+
+    // Repoints this transform at a different Supercell (O(1) — no data is
+    // copied). The new lattice must have matching dimensions and sublattice
+    // positions for T.
+    void point_at(Supercell<Ts...>& other){
+#ifndef NDEBUG
+        if (other.lattice.size() != sc->lattice.size()
+                || other.template num_sl<T>() != sc->template num_sl<T>())
+            throw std::runtime_error("Attempt to swap incompatible lattices [wrong size]");
+        const auto& sl_pos_other = std::get<SlPos<T>>(other.sl_positions);
+        const auto& sl_pos_this = std::get<SlPos<T>>(sc->sl_positions);
+        for (size_t i=0; i<sl_pos_this.size(); i++){
+            if (sl_pos_other[i] != sl_pos_this[i])
+                throw std::runtime_error("Attempt to swap incompatible lattices [sl position mismatch]");
+        }
+#endif
+        sc = &other;
     }
 
     void transform() {
