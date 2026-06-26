@@ -28,8 +28,7 @@ fftw_dep = dependency('fftw3', required: true)
 main_deps = [
   dependency('nlohmann_json', required: true),
   fftw_dep,
-  snf_dep,
-  dependency('argparse', required: true)
+  snf_dep
   ]
 
 project_lib=[]
