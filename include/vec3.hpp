@@ -119,6 +119,13 @@ struct vec3 {
 		return res;
 	}
 
+    template<typename S>
+    vec3 operator/(S a) const {
+        vec3 res(*this);
+        return res /= a;
+    }
+
+
 	bool operator==(const vec3& other) const {
 		return (other.m_x[0] == m_x[0]) && 
 			(other.m_x[1] == m_x[1]) &&

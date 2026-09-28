@@ -1,5 +1,5 @@
 project('lattice_lib', ['cpp', 'c'],
-  version: '2.3.2',
+  version: '2.3.3',
   meson_version : '>= 1.5.0',
   default_options : [ 'warning_level=3', 'buildtype=release', 'cpp_std=c++2a' ]
 )
